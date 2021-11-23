@@ -1,0 +1,19 @@
+# Ignore all
+*
+
+# Unignore all with extensions
+!*.*
+
+# Unignore all dirs
+!*/
+!Dockerfile
+!Makefile
+
+### Above combination will ignore all files without extension ###
+
+.idea/
+
+*.swp
+*.[oa]
+*~
+*.bac

@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: krelay-server
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: krelay-server
+  template:
+    metadata:
+      labels:
+        app: krelay-server
+    spec:
+      containers:
+      - name: krelay-server
+        args:
+        - -v=4
+        image: ko://github.com/knight42/krelay/cmd/server
+        ports:
+        - name: tcp-port
+          containerPort: 9527
