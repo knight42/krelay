@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -34,4 +35,8 @@ func setReadDeadline(c net.Conn, timeout time.Duration) {
 
 func JoinHostPort(host string, port uint16) string {
 	return net.JoinHostPort(host, strconv.Itoa(int(port)))
+}
+
+func IsClosedConnectionError(err error) bool {
+	return strings.Contains(err.Error(), "use of closed network connection")
 }

@@ -62,9 +62,10 @@ func makeDeployment(svrImg string) *appsv1.Deployment {
 					},
 					Containers: []corev1.Container{
 						{
-							Image: svrImg,
-							Name:  constants.ServerName,
-							Args:  []string{"-v=4"},
+							Name:            constants.ServerName,
+							Image:           svrImg,
+							Args:            []string{"-v=4"},
+							ImagePullPolicy: corev1.PullAlways,
 						},
 					},
 				},
@@ -166,8 +167,7 @@ func getAddrForObject(ctx context.Context, cs kubernetes.Interface, obj runtime.
 
 	switch actual := obj.(type) {
 	case *corev1.Pod:
-		addr, err = xnet.AddrFromIP(actual.Status.PodIP)
-		return addr, err
+		return xnet.AddrFromIP(actual.Status.PodIP)
 
 	case *corev1.Service:
 		if actual.Spec.Type == corev1.ServiceTypeExternalName {

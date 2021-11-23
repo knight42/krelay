@@ -3,7 +3,6 @@ package main
 import (
 	"io"
 	"net"
-	"strings"
 
 	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/util/httpstream"
@@ -50,7 +49,7 @@ func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAdd
 
 	go func() {
 		// Copy from the remote side to the local port.
-		if _, err := io.Copy(clientConn, dataStream); err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+		if _, err := io.Copy(clientConn, dataStream); err != nil && !xnet.IsClosedConnectionError(err) {
 			klog.ErrorS(err, "Fail to copy from remote stream to local connection", kvs...)
 		}
 
@@ -63,7 +62,7 @@ func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAdd
 		defer dataStream.Close()
 
 		// Copy from the local port to the remote side.
-		if _, err := io.Copy(dataStream, clientConn); err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+		if _, err := io.Copy(dataStream, clientConn); err != nil && !xnet.IsClosedConnectionError(err) {
 			klog.ErrorS(err, "Fail to copy from local connection to remote stream", kvs...)
 			// break out of the select below without waiting for the other copy to finish
 			close(localError)

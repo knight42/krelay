@@ -13,6 +13,8 @@ import (
 	"github.com/knight42/krelay/pkg/xio"
 )
 
+// UDPConn wraps a *net.UDPConn and overrides the Read and ReadFrom methods to
+// automatically prepend the length of the packet.
 type UDPConn struct {
 	*net.UDPConn
 }
