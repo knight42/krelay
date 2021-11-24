@@ -231,24 +231,31 @@ func createStream(c httpstream.Connection, reqID string) (dataStream httpstream.
 	// we're not writing to this stream
 	_ = errStream.Close()
 
-	errCh = make(chan error)
-	go func() {
-		message, err := io.ReadAll(errStream)
-		switch {
-		case err != nil:
-			errCh <- fmt.Errorf("error reading from error stream: %v", err)
-		case len(message) > 0:
-			errCh <- fmt.Errorf("an error occurred forwarding: %v", string(message))
-		}
-		close(errCh)
-	}()
-
 	// create data stream
 	headers.Set(corev1.StreamType, corev1.StreamTypeData)
 	dataStream, err = c.CreateStream(headers)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create data stream: %w", err)
 	}
+
+	errCh = make(chan error)
+	go func() {
+		message, err := io.ReadAll(errStream)
+		errMsg := string(message)
+		switch {
+		case err != nil:
+			errMsg = err.Error()
+			errCh <- fmt.Errorf("error reading from error stream: %w", err)
+		case len(message) > 0:
+			errCh <- fmt.Errorf("an error occurred forwarding: %v", errMsg)
+		}
+		close(errCh)
+
+		// check if the spdy connection is corrupted
+		if ok, _ := filepath.Match("*network namespace for sandbox * is closed", errMsg); ok {
+			_ = c.Close()
+		}
+	}()
 
 	return dataStream, errCh, nil
 }
