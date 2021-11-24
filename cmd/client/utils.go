@@ -81,8 +81,7 @@ func watchServer(ctx context.Context, cs kubernetes.Interface) (watch.Interface,
 
 func ensureServer(ctx context.Context, cs kubernetes.Interface, svrImg string) (string, error) {
 	labelMap := map[string]string{"app": constants.ServerName}
-
-	w, err := watchServer(ctx, cs)
+	_, err := cs.AppsV1().Deployments(metav1.NamespaceDefault).Get(ctx, constants.ServerName, metav1.GetOptions{})
 	if err != nil {
 		if k8serr.IsNotFound(err) {
 			_, err = cs.AppsV1().Deployments(metav1.NamespaceDefault).Create(ctx, makeDeployment(svrImg), metav1.CreateOptions{})
@@ -92,10 +91,10 @@ func ensureServer(ctx context.Context, cs kubernetes.Interface, svrImg string) (
 		} else {
 			return "", fmt.Errorf("get krelay-server: %w", err)
 		}
-		w, err = watchServer(ctx, cs)
-		if err != nil {
-			return "", fmt.Errorf("watch krelay-server: %w", err)
-		}
+	}
+	w, err := watchServer(ctx, cs)
+	if err != nil {
+		return "", fmt.Errorf("watch krelay-server: %w", err)
 	}
 
 	steady := false
@@ -111,7 +110,7 @@ loop:
 		d := ev.Object.(*appsv1.Deployment)
 		replicas := *d.Spec.Replicas
 		if replicas != d.Status.UpdatedReplicas || replicas != d.Status.ReadyReplicas {
-			klog.InfoS("server is not ready",
+			klog.V(3).InfoS("Server is not ready",
 				"expectedReplicas", replicas,
 				"updatedReplicas", d.Status.UpdatedReplicas,
 				"readyReplicas", d.Status.ReadyReplicas,
@@ -122,11 +121,10 @@ loop:
 		break
 	}
 
+	w.Stop()
 	if !steady {
-		w.Stop()
 		return "", errors.New("krelay-server is not ready")
 	}
-	w.Stop()
 	return ensureRunningPods(ctx, cs, labelMap)
 }
 
@@ -228,7 +226,7 @@ func createStream(c httpstream.Connection, reqID string) (dataStream httpstream.
 	headers.Set(corev1.PortForwardRequestIDHeader, reqID)
 	errStream, err := c.CreateStream(headers)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create error stream")
+		return nil, nil, errors.New("create error stream")
 	}
 	// we're not writing to this stream
 	_ = errStream.Close()
