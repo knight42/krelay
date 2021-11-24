@@ -21,6 +21,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
+	"github.com/knight42/krelay/pkg/ports"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
@@ -75,6 +76,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 
 	var remoteAddr xnet.Addr
+	parser := ports.NewParser(args[1:])
 	switch parts[0] {
 	case "ip":
 		remoteAddr, err = xnet.AddrFromIP(parts[1])
@@ -99,6 +101,13 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+
+		parser = parser.WithObject(obj)
+	}
+
+	forwardPorts, err := parser.Parse()
+	if err != nil {
+		return err
 	}
 
 	klog.V(4).InfoS("Ensure server")
@@ -114,11 +123,6 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 
 	restClient, err := rest.RESTClientFor(restCfg)
-	if err != nil {
-		return err
-	}
-
-	forwardPorts, err := parsePorts(args[1:])
 	if err != nil {
 		return err
 	}

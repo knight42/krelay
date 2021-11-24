@@ -13,7 +13,6 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -163,8 +162,6 @@ func ensureRunningPods(ctx context.Context, cs kubernetes.Interface, labelMap ma
 }
 
 func getAddrForObject(ctx context.Context, cs kubernetes.Interface, obj runtime.Object) (addr xnet.Addr, err error) {
-	var selector labels.Selector
-
 	switch actual := obj.(type) {
 	case *corev1.Pod:
 		return xnet.AddrFromIP(actual.Status.PodIP)
@@ -180,40 +177,11 @@ func getAddrForObject(ctx context.Context, cs kubernetes.Interface, obj runtime.
 		if len(actual.Spec.Selector) == 0 {
 			return addr, fmt.Errorf("service selector must not be empty")
 		}
-		selector = labels.SelectorFromSet(actual.Spec.Selector)
+	}
 
-	case *appsv1.ReplicaSet:
-		selector, err = metav1.LabelSelectorAsSelector(actual.Spec.Selector)
-		if err != nil {
-			return addr, fmt.Errorf("invalid label selector: %w", err)
-		}
-
-	case *appsv1.Deployment:
-		selector, err = metav1.LabelSelectorAsSelector(actual.Spec.Selector)
-		if err != nil {
-			return addr, fmt.Errorf("invalid label selector: %w", err)
-		}
-
-	case *appsv1.StatefulSet:
-		selector, err = metav1.LabelSelectorAsSelector(actual.Spec.Selector)
-		if err != nil {
-			return addr, fmt.Errorf("invalid label selector: %w", err)
-		}
-
-	case *appsv1.DaemonSet:
-		selector, err = metav1.LabelSelectorAsSelector(actual.Spec.Selector)
-		if err != nil {
-			return addr, fmt.Errorf("invalid label selector: %w", err)
-		}
-
-	case *batchv1.Job:
-		selector, err = metav1.LabelSelectorAsSelector(actual.Spec.Selector)
-		if err != nil {
-			return addr, fmt.Errorf("invalid label selector: %w", err)
-		}
-
-	default:
-		return addr, fmt.Errorf("selector for %T not implemented", obj)
+	selector, err := selectorForObject(obj)
+	if err != nil {
+		return xnet.Addr{}, err
 	}
 
 	ns := obj.(metav1.Object).GetNamespace()
@@ -231,66 +199,25 @@ func getAddrForObject(ctx context.Context, cs kubernetes.Interface, obj runtime.
 	return addr, fmt.Errorf("no healthy pods found")
 }
 
-type portPair struct {
-	LocalPort  uint16
-	RemotePort uint16
-	Protocol   string
-}
+func selectorForObject(obj runtime.Object) (labels.Selector, error) {
+	switch actual := obj.(type) {
+	case *corev1.Service:
+		return labels.SelectorFromSet(actual.Spec.Selector), nil
 
-func parsePort(s string) (uint16, error) {
-	port, err := strconv.ParseUint(s, 10, 16)
-	if err != nil {
-		return 0, fmt.Errorf("invalid port: %s", s)
+	case *appsv1.ReplicaSet:
+		return metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+
+	case *appsv1.Deployment:
+		return metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+
+	case *appsv1.StatefulSet:
+		return metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+
+	case *appsv1.DaemonSet:
+		return metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+	default:
+		return nil, fmt.Errorf("selector for %T not implemented", obj)
 	}
-	return uint16(port), nil
-}
-
-func parsePorts(args []string) ([]portPair, error) {
-	ret := make([]portPair, len(args))
-	for i, arg := range args {
-		proto := "tcp"
-		protoIdx := strings.IndexRune(arg, '@')
-		if protoIdx > 0 {
-			if protoIdx < len(arg)-1 {
-				proto = arg[protoIdx+1:]
-				switch proto {
-				case "tcp", "udp":
-				default:
-					return nil, fmt.Errorf("unknown protocol: %s", proto)
-				}
-			}
-			arg = arg[:protoIdx]
-		}
-
-		var (
-			localStr, remoteStr string
-		)
-
-		parts := strings.Split(arg, ":")
-		switch len(parts) {
-		case 1:
-			localStr, remoteStr = parts[0], parts[0]
-		case 2:
-			localStr = parts[0]
-			if len(localStr) == 0 {
-				localStr = "0"
-			}
-			remoteStr = parts[1]
-		default:
-			return nil, fmt.Errorf("invalid port format: %q", arg)
-		}
-
-		localPort, err := parsePort(localStr)
-		if err != nil {
-			return nil, err
-		}
-		remotePort, err := parsePort(remoteStr)
-		if err != nil {
-			return nil, err
-		}
-		ret[i] = portPair{RemotePort: remotePort, LocalPort: localPort, Protocol: proto}
-	}
-	return ret, nil
 }
 
 func createStream(c httpstream.Connection, reqID string) (dataStream httpstream.Stream, errCh chan error, err error) {

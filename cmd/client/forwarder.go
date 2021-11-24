@@ -9,19 +9,20 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
+	"github.com/knight42/krelay/pkg/ports"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
 type portForwarder struct {
 	addr       string
 	remoteAddr xnet.Addr
-	ports      portPair
+	ports      ports.PortPair
 
 	listener   net.Listener
 	packetConn net.PacketConn
 }
 
-func newPortForwarder(addr string, remoteAddr xnet.Addr, pp portPair) *portForwarder {
+func newPortForwarder(addr string, remoteAddr xnet.Addr, pp ports.PortPair) *portForwarder {
 	return &portForwarder{
 		addr:       addr,
 		remoteAddr: remoteAddr,
