@@ -1,12 +1,21 @@
+IMAGE_TAG ?= latest
+
+GO_LDFLAGS = '-w -s'
+GOBUILD = CGO_ENABLED=0 go build -v -trimpath -ldflags $(GO_LDFLAGS)
+
 .PHONY: server-image push-server-image
 server-image:
-	docker build -t knight42/krelay-server:latest -f manifests/Dockerfile .
-push-server-image:
-	docker push knight42/krelay-server:latest
+	docker build -t ghcr.io/knight42/krelay-server:$(IMAGE_TAG) -f manifests/Dockerfile .
+push-server-image: server-image
+	docker push ghcr.io/knight42/krelay-server:$(IMAGE_TAG)
+
+.PHONY: krelay-server
+krelay-server:
+	$(GOBUILD) -o krelay-server ./cmd/server
 
 .PHONY: krelay
 krelay:
-	CGO_ENABLED=0 go build -trimpath -o krelay ./cmd/client
+	$(GOBUILD) -o krelay ./cmd/client
 
 .PHONY: lint
 lint:

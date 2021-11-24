@@ -1,9 +1,9 @@
-FROM golang:1.16 AS builder
+FROM golang:1.17 AS builder
 WORKDIR /workspace
 ADD . .
-RUN CGO_ENABLED=0 go build -trimpath -o /app ./cmd/server
+RUN make krelay-server
 
 FROM gcr.io/distroless/static:nonroot
 LABEL maintainer="Jian Zeng <anonymousknight96@gmail.com>"
-COPY --from=builder /app /app
-ENTRYPOINT ["/app"]
+COPY --from=builder /workspace/krelay-server /server
+ENTRYPOINT ["/server"]
