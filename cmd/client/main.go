@@ -110,7 +110,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	klog.V(4).InfoS("Ensure server")
+	klog.InfoS("Ensure krelay-server")
 	svrPodName, err := ensureServer(ctx, cs, o.serverImage)
 	if err != nil {
 		return fmt.Errorf("ensure krelay-server: %w", err)
@@ -143,7 +143,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		pf := newPortForwarder(o.address, remoteAddr, pp)
 		err := pf.listen()
 		if err != nil {
-			klog.ErrorS(err, "Fail to bind address")
+			klog.ErrorS(err, "Fail to listen on port", "port", pp.LocalPort)
 		} else {
 			succeeded = true
 		}
@@ -151,7 +151,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 
 	if !succeeded {
-		klog.Fatalf("Fail to listen on any of the requested ports: %v", forwardPorts)
+		return fmt.Errorf("unable to listen on any of the requested ports: %v", forwardPorts)
 	}
 
 	select {
@@ -180,6 +180,6 @@ func main() {
 	flags.AddGoFlagSet(flag.CommandLine)
 	cf.AddFlags(flags)
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
-	flags.StringVar(&o.serverImage, "server-image", "knight42/krelay-server:latest", "krelay server image to use")
+	flags.StringVar(&o.serverImage, "server-image", constants.ServerImage, "krelay server image to use")
 	_ = c.Execute()
 }

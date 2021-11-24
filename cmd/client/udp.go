@@ -22,7 +22,7 @@ func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []by
 	klog.InfoS("Handling udp connection",
 		constants.LogFieldRequestID, requestID.String(),
 		constants.LogFieldDestAddr, xnet.JoinHostPort(dstAddr.String(), dstPort),
-		"listenAddr", clientConn.LocalAddr().String(),
+		constants.LogFieldLocalAddr, clientConn.LocalAddr().String(),
 		"clientAddr", cliAddr.String(),
 	)
 

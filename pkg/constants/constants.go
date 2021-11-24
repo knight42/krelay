@@ -1,8 +1,11 @@
 package constants
 
 const (
-	LogFieldRequestID = "reqID"
-	LogFieldDestAddr  = "dstAddr"
+	LogFieldRequestID  = "reqID"
+	LogFieldDestAddr   = "dstAddr"
+	LogFieldLocalAddr  = "localAddr"
+	LogFieldRemotePort = "remotePort"
+	LogFieldProtocol   = "protocol"
 )
 
 const (
@@ -21,3 +24,5 @@ const (
 	ProtocolTCP = "tcp"
 	ProtocolUDP = "udp"
 )
+
+const ServerImage = "ghcr.io/knight42/krelay-server:v0.0.1"

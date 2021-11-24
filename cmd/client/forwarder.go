@@ -58,7 +58,11 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 		defer l.Close()
 
 		localAddr := l.Addr().String()
-		klog.InfoS("Listening", "protocol", p.ports.Protocol, "localAddr", localAddr)
+		klog.InfoS("Forwarding",
+			constants.LogFieldProtocol, p.ports.Protocol,
+			constants.LogFieldLocalAddr, localAddr,
+			constants.LogFieldRemotePort, p.ports.RemotePort,
+		)
 
 		for {
 			select {
@@ -69,7 +73,10 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 
 			c, err := l.Accept()
 			if err != nil {
-				klog.ErrorS(err, "Fail to accept tcp connection", "protocol", p.ports.Protocol, "localAddress", localAddr)
+				klog.ErrorS(err, "Fail to accept tcp connection",
+					constants.LogFieldProtocol, p.ports.Protocol,
+					constants.LogFieldLocalAddr, localAddr,
+				)
 				return
 			}
 
@@ -82,15 +89,22 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 
 		udpConn := &xnet.UDPConn{UDPConn: pc.(*net.UDPConn)}
 		localAddr := pc.LocalAddr().String()
-		klog.InfoS("Listening", "protocol", p.ports.Protocol, "localAddr", localAddr)
-
+		klog.InfoS("Forwarding",
+			constants.LogFieldProtocol, p.ports.Protocol,
+			constants.LogFieldLocalAddr, localAddr,
+			constants.LogFieldRemotePort, p.ports.RemotePort,
+		)
 		track := newConnTrack()
 		finish := make(chan string)
 
 		go func() {
 			for key := range finish {
 				track.Delete(key)
-				klog.V(4).InfoS("Remove udp conn from conntrack table", "key", key, "protocol", p.ports.Protocol, "localAddress", localAddr)
+				klog.V(4).InfoS("Remove udp conn from conntrack table",
+					"key", key,
+					constants.LogFieldProtocol, p.ports.Protocol,
+					constants.LogFieldLocalAddr, localAddr,
+				)
 			}
 		}()
 
@@ -107,7 +121,10 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 
 			n, cliAddr, err := udpConn.ReadFrom(buf)
 			if err != nil {
-				klog.ErrorS(err, "Fail to read udp packet", "protocol", p.ports.Protocol, "localAddress", localAddr)
+				klog.ErrorS(err, "Fail to read udp packet",
+					constants.LogFieldProtocol, p.ports.Protocol,
+					constants.LogFieldLocalAddr, localAddr,
+				)
 				return
 			}
 			data := make([]byte, n)

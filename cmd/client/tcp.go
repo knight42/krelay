@@ -22,7 +22,7 @@ func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAdd
 	klog.InfoS("Handling tcp connection",
 		constants.LogFieldRequestID, requestID.String(),
 		constants.LogFieldDestAddr, xnet.JoinHostPort(dstAddr.String(), dstPort),
-		"listenAddr", clientConn.LocalAddr().String(),
+		constants.LogFieldLocalAddr, clientConn.LocalAddr().String(),
 		"clientAddr", clientConn.RemoteAddr().String(),
 	)
 

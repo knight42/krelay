@@ -66,7 +66,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 		xnet.ProxyUDP(hdr.RequestID.String(), c, udpConn)
 
 	default:
-		klog.InfoS("Unknown protocol", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr, "protocol", hdr.Protocol)
+		klog.InfoS("Unknown protocol", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr, constants.LogFieldProtocol, hdr.Protocol)
 	}
 }
 
