@@ -21,7 +21,7 @@ func run(ctx context.Context) error {
 	}
 	defer tcpListener.Close()
 
-	dialer := net.Dialer{Timeout: time.Minute}
+	dialer := net.Dialer{Timeout: time.Second * 10}
 
 	for {
 		c, err := tcpListener.Accept()
