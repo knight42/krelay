@@ -169,9 +169,18 @@ func main() {
 	o := Options{
 		getter: cf,
 	}
+	printVersion := false
+
 	c := cobra.Command{
-		Use: getProgramName(),
+		Use:     fmt.Sprintf(`%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT[@PROTOCOL] [...[LOCAL_PORT_N:]REMOTE_PORT_N[@PROTOCOL_N]]`, getProgramName()),
+		Example: example(),
+		Long: `This command is similar to "kubectl port-forward", but it also supports UDP and could forward data to a
+service, ip and hostname rather than only pods.`,
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			if printVersion {
+				fmt.Printf("Client version: %s\n", constants.ClientVersion)
+				return nil
+			}
 			return o.Run(context.Background(), args)
 		},
 		SilenceUsage: true,
@@ -179,7 +188,8 @@ func main() {
 	flags := c.Flags()
 	flags.AddGoFlagSet(flag.CommandLine)
 	cf.AddFlags(flags)
+	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
-	flags.StringVar(&o.serverImage, "server-image", constants.ServerImage, "krelay server image to use")
+	flags.StringVar(&o.serverImage, "server-image", constants.ServerImage, "The krelay server image to use.")
 	_ = c.Execute()
 }

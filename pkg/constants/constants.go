@@ -26,3 +26,5 @@ const (
 )
 
 const ServerImage = "ghcr.io/knight42/krelay-server:v0.0.1"
+
+var ClientVersion = "unknown"

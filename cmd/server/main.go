@@ -49,7 +49,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 	case xnet.ProtocolTCP:
 		upstreamConn, err := dialer.DialContext(ctx, "tcp", dstAddr)
 		if err != nil {
-			klog.ErrorS(err, "Fail to create tcp connection", constants.LogFieldDestAddr, dstAddr)
+			klog.ErrorS(err, "Fail to create tcp connection", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
 			return
 		}
 		klog.InfoS("Start proxy tcp request", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
@@ -58,7 +58,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 	case xnet.ProtocolUDP:
 		upstreamConn, err := dialer.DialContext(ctx, "udp", dstAddr)
 		if err != nil {
-			klog.ErrorS(err, "Fail to create udp connection", constants.LogFieldDestAddr, dstAddr)
+			klog.ErrorS(err, "Fail to create udp connection", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
 			return
 		}
 		klog.InfoS("Start proxy udp request", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
