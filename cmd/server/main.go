@@ -14,14 +14,18 @@ import (
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
-func run(ctx context.Context) error {
-	tcpListener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", constants.ServerPort))
+type options struct {
+	connectTimeout time.Duration
+}
+
+func (o *options) run(ctx context.Context) error {
+	tcpListener, err := net.Listen(constants.ProtocolTCP, fmt.Sprintf("0.0.0.0:%d", constants.ServerPort))
 	if err != nil {
 		return err
 	}
 	defer tcpListener.Close()
 
-	dialer := net.Dialer{Timeout: time.Second * 10}
+	dialer := net.Dialer{Timeout: o.connectTimeout}
 
 	for {
 		c, err := tcpListener.Accept()
@@ -47,7 +51,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 
 	switch hdr.Protocol {
 	case xnet.ProtocolTCP:
-		upstreamConn, err := dialer.DialContext(ctx, "tcp", dstAddr)
+		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolTCP, dstAddr)
 		if err != nil {
 			klog.ErrorS(err, "Fail to create tcp connection", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
 			return
@@ -56,7 +60,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 		xnet.ProxyTCP(hdr.RequestID.String(), c, upstreamConn.(*net.TCPConn))
 
 	case xnet.ProtocolUDP:
-		upstreamConn, err := dialer.DialContext(ctx, "udp", dstAddr)
+		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolUDP, dstAddr)
 		if err != nil {
 			klog.ErrorS(err, "Fail to create udp connection", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
 			return
@@ -72,13 +76,15 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 
 func main() {
 	klog.InitFlags(nil)
+	o := options{}
 	c := cobra.Command{
 		Use: constants.ServerName,
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			return run(context.Background())
+			return o.run(context.Background())
 		},
 		SilenceUsage: true,
 	}
 	c.Flags().AddGoFlagSet(flag.CommandLine)
+	c.Flags().DurationVar(&o.connectTimeout, "connect-timeout", time.Second*10, "Timeout for connecting to upstream")
 	_ = c.Execute()
 }
