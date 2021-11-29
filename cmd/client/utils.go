@@ -84,6 +84,7 @@ func ensureServer(ctx context.Context, cs kubernetes.Interface, svrImg string) (
 	_, err := cs.AppsV1().Deployments(metav1.NamespaceDefault).Get(ctx, constants.ServerName, metav1.GetOptions{})
 	if err != nil {
 		if k8serr.IsNotFound(err) {
+			klog.V(4).InfoS("Creating deployment krelay-server in default namespace")
 			_, err = cs.AppsV1().Deployments(metav1.NamespaceDefault).Create(ctx, makeDeployment(svrImg), metav1.CreateOptions{})
 			if err != nil && !k8serr.IsConflict(err) {
 				return "", fmt.Errorf("create krelay-server: %w", err)

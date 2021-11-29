@@ -31,8 +31,7 @@ type Options struct {
 	address     string
 }
 
-// setKubernetesDefaults sets default values on the provided client config for accessing the
-// Kubernetes API or returns an error if any of the defaults are impossible or invalid.
+// setKubernetesDefaults sets default values on the provided client config for accessing the Kubernetes API.
 func setKubernetesDefaults(config *rest.Config) {
 	// GroupVersion is required when initializing a RESTClient
 	config.GroupVersion = &schema.GroupVersion{Group: "", Version: "v1"}
@@ -110,12 +109,12 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	klog.InfoS("Ensure krelay-server")
+	klog.InfoS("Check if krelay-server exists")
 	svrPodName, err := ensureServer(ctx, cs, o.serverImage)
 	if err != nil {
 		return fmt.Errorf("ensure krelay-server: %w", err)
 	}
-	klog.V(4).InfoS("Got server pod", "serverPod", svrPodName)
+	klog.V(4).InfoS("Got server pod", "name", svrPodName)
 
 	transport, upgrader, err := spdy.RoundTripperFor(restCfg)
 	if err != nil {
@@ -190,6 +189,6 @@ service, ip and hostname rather than only pods.`,
 	cf.AddFlags(flags)
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
-	flags.StringVar(&o.serverImage, "server-image", constants.ServerImage, "The krelay server image to use.")
+	flags.StringVar(&o.serverImage, "server-image", constants.ServerImage, "The krelay-server image to use. If the krelay-server deployment does not exist, it will be automatically created using this image.")
 	_ = c.Execute()
 }

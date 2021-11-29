@@ -13,10 +13,13 @@ func example() string {
   # Listen on a random port locally, forwarding udp packets to port 53 in a pod selected by the deployment
   {{.Name}} -n kube-system deploy/kube-dns :53@udp
 
-  # Listen on port 6379 locally, forwarding data to host "redis.cn-north-1.cache.amazonaws.com"
+  # Listen on port 5353 on all addresses, forwarding data to port 53 in the pod
+  {{.Name}} --address 0.0.0.0 pod/my-pod 5353:53
+
+  # Listen on port 6379 locally, forwarding data to "redis.cn-north-1.cache.amazonaws.com:6379" from the cluster
   {{.Name}} host/redis.cn-north-1.cache.amazonaws.com 6379
 
-  # Listen on port 5000 and 6000 locally, forwarding data to ip 1.2.3.4
+  # Listen on port 5000 and 6000 locally, forwarding data to "1.2.3.4:5000" and "1.2.3.4:6000" from the cluster
   {{.Name}} ip/1.2.3.4 5000@tcp 6000@udp
 `
 	tpl, err := template.New("example").Parse(text)
