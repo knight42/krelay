@@ -1,6 +1,7 @@
 IMAGE_TAG ?= latest
 
-GO_LDFLAGS = '-w -s'
+VERSION ?= $(shell git describe --tags --always --dirty)
+GO_LDFLAGS = "-w -s -X github.com/knight42/krelay/pkg/constants.ClientVersion=$(VERSION)"
 GOBUILD = CGO_ENABLED=0 go build -v -trimpath -ldflags $(GO_LDFLAGS)
 
 .PHONY: server-image push-server-image

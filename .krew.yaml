@@ -1,0 +1,35 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: relay
+spec:
+  version: {{ .TagName }}
+  homepage: https://github.com/knight42/krelay
+  shortDescription: test
+  description: |
+    test
+  platforms:
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: amd64
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/krelay-{{ .TagName }}-darwin-amd64.tar.gz" .TagName }}
+    bin: kubectl-relay
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: arm64
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/krelay-{{ .TagName }}-darwin-arm64.tar.gz" .TagName }}
+    bin: kubectl-relay
+  - selector:
+      matchLabels:
+        os: linux
+        arch: amd64
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/krelay-{{ .TagName }}-linux-amd64.tar.gz" .TagName }}
+    bin: kubectl-relay
+  - selector:
+      matchLabels:
+        os: linux
+        arch: arm64
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/krelay-{{ .TagName }}-linux-arm64.tar.gz" .TagName }}
+    bin: kubectl-relay
