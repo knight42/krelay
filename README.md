@@ -13,16 +13,27 @@ This kubectl plugin is a drop-in replacement for `kubectl port-forward` with som
 * Forwarding data to the given IP or hostname that is accessible within the kubernetes cluster
   * You could forward a local port to a port in the `Service`, and the forwarding session will not be interfered even if you perform rolling updates.
 
+## Demo
+
+### Forwarding UDP port
+
+[![asciicast](https://asciinema.org/a/452745.svg)](https://asciinema.org/a/452745)
+
+### Forwarding traffic to a Service
+
+[![asciicast](https://asciinema.org/a/452747.svg)](https://asciinema.org/a/452747)
+
+NOTE: The forwarding session is not affected after rolling update.
+
+### Forwarding traffic to a IP or hostname
+
+[![asciicast](https://asciinema.org/a/452749.svg)](https://asciinema.org/a/452749)
 
 ## Installing
 
 | Distribution                           | Command / Link                                                 |
 |----------------------------------------|----------------------------------------------------------------|
 | Pre-built binaries for macOS, Linux    | [GitHub releases](https://github.com/knight42/krelay/releases) |
-
-## Demo
-
-TBD
 
 ## Usage
 
