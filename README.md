@@ -56,4 +56,30 @@ kubectl relay ip/1.2.3.4 5000@tcp 6000@udp
 
 ## How It Works
 
-TBD
+`krelay` will install an agent(named `krelay-server`) to the kubernetes cluster, and the agent will forward the traffic to the target ip/hostname.
+
+If the target is an object in the cluster, like `Deployment`, `StatefulSet`, `krelay` will automatically select a pod it managed like `kubectl port-forward` does.
+After that `krelay` will tell the destination IP(i.e. the pod's IP) and the destination port to the agent by sending a special `Header` first, 
+and then the data will be forwarded to the agent and sent to the target address. 
+
+Specifically, if the target is a `Service`, `krelay` will try to determine the destination address automatically:
+* If the `Service` has a clusterIP, then the clusterIP is used as the destination IP.
+* If the type of `Service` is `ExternalName`, then the external name is used as the destination address.
+* If none of the above scenario is met, then `krelay` will choose a pod selected by this `Service`.
+
+The `Header` looks like this:
+
+|            | Version | Header Length | Request ID | Protocol | Destination Port | Address Type | Address  |
+| ---------- | ------- | ------------  | ---------- | -------- | -------------    | -----------  | -------- |
+| Byte Count | 1       | 2             | 16         | 1        | 2                | 1            | Variable |
+
+* `Version`: This field is preserved for future extension, and it is not in-use now.
+* `Header Length`: The total length of the `Header` in bytes.
+* `Request ID`: The ID of the request(now a UUID is used as the request ID).
+* `Protocol`: The protocol of the request, `0` stands for TCP and `1` stands for UDP.
+* `Destination Port`: The destination port of the request.
+* `Address Type`: The type of the destination address, `0` stands for IP and `1` stands for hostname.
+* `Address`: The destination address of the request:
+  * 4 bytes for IPv4 address
+  * 16 bytes for IPv6 address
+  * Variable bytes for hostname
