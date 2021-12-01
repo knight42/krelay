@@ -19,10 +19,7 @@ var headerCases = map[string]struct {
 			RequestID: uuid.UUID{},
 			Protocol:  ProtocolTCP,
 			Port:      80,
-			Addr: Addr{
-				Type: AddrTypeHost,
-				Host: "a.com",
-			},
+			Addr:      AddrFromHost("a.com"),
 		},
 		bytes: []byte{
 			1,
@@ -30,7 +27,7 @@ var headerCases = map[string]struct {
 			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			0,
 			0, 80,
-			2,
+			1,
 			97, 46, 99, 111, 109,
 		},
 	},
@@ -40,10 +37,7 @@ var headerCases = map[string]struct {
 			RequestID: uuid.UUID{},
 			Protocol:  ProtocolUDP,
 			Port:      53,
-			Addr: Addr{
-				Type: AddrTypeIPv4,
-				IP:   net.IPv4(192, 168, 1, 1).To4(),
-			},
+			Addr:      AddrFromBytes(AddrTypeIP, net.IPv4(192, 168, 1, 1).To4()),
 		},
 		bytes: []byte{
 			0,
@@ -61,10 +55,7 @@ var headerCases = map[string]struct {
 			RequestID: uuid.UUID{},
 			Protocol:  ProtocolTCP,
 			Port:      8080,
-			Addr: Addr{
-				Type: AddrTypeIPv6,
-				IP:   net.IPv6loopback.To16(),
-			},
+			Addr:      AddrFromBytes(AddrTypeIP, net.IPv6loopback),
 		},
 		bytes: []byte{
 			0,
@@ -72,7 +63,7 @@ var headerCases = map[string]struct {
 			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			0,
 			0x1f, 0x90,
-			1,
+			0,
 			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
 		},
 	},

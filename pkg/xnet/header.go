@@ -27,7 +27,7 @@ func (h *Header) Marshal() []byte {
 	copy(buf[3:19], h.RequestID[:])
 	buf[19] = h.Protocol
 	binary.BigEndian.PutUint16(buf[20:22], h.Port)
-	buf[22] = h.Addr.Type
+	buf[22] = h.Addr.typ
 	copy(buf[23:], addrBytes)
 	return buf
 }

@@ -167,7 +167,7 @@ func getAddrForObject(ctx context.Context, cs kubernetes.Interface, obj runtime.
 
 	case *corev1.Service:
 		if actual.Spec.Type == corev1.ServiceTypeExternalName {
-			return xnet.Addr{Type: xnet.AddrTypeHost, Host: actual.Spec.ExternalName}, nil
+			return xnet.AddrFromHost(actual.Spec.ExternalName), nil
 		}
 		if actual.Spec.ClusterIP != corev1.ClusterIPNone {
 			return xnet.AddrFromIP(actual.Spec.ClusterIP)

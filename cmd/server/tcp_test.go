@@ -44,10 +44,7 @@ func TestHandleTCPConn(t *testing.T) {
 			RequestID: uuid.New(),
 			Protocol:  xnet.ProtocolTCP,
 			Port:      tsPort,
-			Addr: xnet.Addr{
-				Type: xnet.AddrTypeHost,
-				Host: tsURL.Hostname(),
-			},
+			Addr:      xnet.AddrFromHost(tsURL.Hostname()),
 		}
 		_, err = xio.WriteFull(c, hdr.Marshal())
 		if err != nil {

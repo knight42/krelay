@@ -84,7 +84,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		}
 
 	case "host":
-		remoteAddr = xnet.Addr{Type: xnet.AddrTypeHost, Host: parts[1]}
+		remoteAddr = xnet.AddrFromHost(parts[1])
 
 	default:
 		obj, err := resource.NewBuilder(o.getter).
