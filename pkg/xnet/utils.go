@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -39,4 +40,12 @@ func JoinHostPort(host string, port uint16) string {
 
 func IsClosedConnectionError(err error) bool {
 	return strings.Contains(err.Error(), "use of closed network connection")
+}
+
+func newBufferPool(size int) sync.Pool {
+	return sync.Pool{
+		New: func() interface{} {
+			return make([]byte, size)
+		},
+	}
 }
