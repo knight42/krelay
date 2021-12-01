@@ -5,31 +5,33 @@ metadata:
 spec:
   version: {{ .TagName }}
   homepage: https://github.com/knight42/krelay
-  shortDescription: test
+  shortDescription: An enhanced `kubectl port-forward`.
   description: |
-    test
+    This kubectl plugin is a drop-in replacement for `kubectl port-forward` with some enhanced features:
+    * Supports UDP port forwarding
+    * Forwarding data to the given IP or hostname that is accessible within the kubernetes cluster
   platforms:
   - selector:
       matchLabels:
         os: darwin
         arch: amd64
-    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/krelay-{{ .TagName }}-darwin-amd64.tar.gz" .TagName }}
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/kubectl-relay_{{ .TagName }}_darwin-amd64.tar.gz" .TagName }}
     bin: kubectl-relay
   - selector:
       matchLabels:
         os: darwin
         arch: arm64
-    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/krelay-{{ .TagName }}-darwin-arm64.tar.gz" .TagName }}
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/kubectl-relay_{{ .TagName }}_darwin-arm64.tar.gz" .TagName }}
     bin: kubectl-relay
   - selector:
       matchLabels:
         os: linux
         arch: amd64
-    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/krelay-{{ .TagName }}-linux-amd64.tar.gz" .TagName }}
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/kubectl-relay_{{ .TagName }}_linux-amd64.tar.gz" .TagName }}
     bin: kubectl-relay
   - selector:
       matchLabels:
         os: linux
         arch: arm64
-    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/krelay-{{ .TagName }}-linux-arm64.tar.gz" .TagName }}
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/kubectl-relay_{{ .TagName }}_linux-arm64.tar.gz" .TagName }}
     bin: kubectl-relay
