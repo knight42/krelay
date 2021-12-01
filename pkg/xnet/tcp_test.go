@@ -5,56 +5,40 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/knight42/krelay/pkg/constants"
+	"github.com/knight42/krelay/pkg/testutils/tcp"
 )
 
 func TestProxyHTTPS(t *testing.T) {
 	const msg = "Hello, World!"
-	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts, tsURL, _ := tcp.NewTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(msg))
-	}))
+	})
 	defer ts.Close()
-	tsHost := strings.TrimPrefix(ts.URL, "https://")
-
-	l, err := net.Listen(constants.ProtocolTCP, "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
 
 	dialer := net.Dialer{Timeout: time.Second * 10}
 
-	go func() {
-		c, err := l.Accept()
-		if err != nil {
-			t.Errorf("accept: %v", err)
-			return
-		}
-
-		upConn, err := dialer.DialContext(context.Background(), constants.ProtocolTCP, tsHost)
+	l := tcp.NewTCPServer(t, func(c net.Conn) {
+		upConn, err := dialer.DialContext(context.Background(), constants.ProtocolTCP, tsURL.Host)
 		if err != nil {
 			t.Errorf("dial upstream: %v", err)
 			return
 		}
 
 		ProxyTCP("req-id", c.(*net.TCPConn), upConn.(*net.TCPConn))
-	}()
+	})
+	defer l.Close()
 
+	r := require.New(t)
 	resp, err := ts.Client().Get("https://" + l.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
+	r.NoError(err)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, msg, string(body))
+	r.NoError(err)
+	r.Equal(msg, string(body))
 }
