@@ -7,6 +7,14 @@
 
 This kubectl plugin is a drop-in replacement for `kubectl port-forward` with some enhanced features.
 
+## Table of Contents
+
+- [Extra Features](#extra-features)
+- [Demo](#demo)
+- [Installation](#installation)
+- [Usage](#usage)
+- [How It Works](#how-it-works)
+
 ## Extra Features
 
 * Supports UDP port forwarding
@@ -29,11 +37,22 @@ NOTE: The forwarding session is not affected after rolling update.
 
 [![asciicast](https://asciinema.org/a/452749.svg)](https://asciinema.org/a/452749)
 
-## Installing
+## Installation
 
 | Distribution                           | Command / Link                                                 |
 |----------------------------------------|----------------------------------------------------------------|
+| [Krew](https://krew.sigs.k8s.io/)      | `kubectl krew install relay`                                   |
 | Pre-built binaries for macOS, Linux    | [GitHub releases](https://github.com/knight42/krelay/releases) |
+
+### Build from source
+
+```
+git clone https://github.com/knight42/krelay
+cd krelay
+make krelay
+cp krelay "$GOPATH/bin/kubectl-relay"
+kubectl relay -V
+```
 
 ## Usage
 
