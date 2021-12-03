@@ -9,17 +9,19 @@ This kubectl plugin is a drop-in replacement for `kubectl port-forward` with som
 
 ## Table of Contents
 
-- [Extra Features](#extra-features)
+- [Features](#features)
 - [Demo](#demo)
 - [Installation](#installation)
 - [Usage](#usage)
 - [How It Works](#how-it-works)
 
-## Extra Features
+## Features
 
+* Compatible with `kubectl port-forward`
 * Supports UDP port forwarding
 * Forwarding data to the given IP or hostname that is accessible within the kubernetes cluster
   * You could forward a local port to a port in the `Service`, and the forwarding session will not be interfered even if you perform rolling updates.
+  * The hostname is resolved inside the cluster, so you don't need to change your local nameserver or modify the `/etc/hosts`.
 
 ## Demo
 
