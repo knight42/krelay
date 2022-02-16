@@ -20,7 +20,7 @@ This kubectl plugin is a drop-in replacement for `kubectl port-forward` with som
 * Compatible with `kubectl port-forward`
 * Supports UDP port forwarding
 * Forwarding data to the given IP or hostname that is accessible within the kubernetes cluster
-  * You could forward a local port to a port in the `Service`, and the forwarding session will not be interfered even if you perform rolling updates.
+  * You could forward a local port to a port in the `Service` or a workload like `Deployment` or `StatefulSet`, and the forwarding session will not be interfered even if you perform rolling updates.
   * The hostname is resolved inside the cluster, so you don't need to change your local nameserver or modify the `/etc/hosts`.
 
 ## Demo
@@ -80,8 +80,8 @@ kubectl relay ip/1.2.3.4 5000@tcp 6000@udp
 `krelay` will install an agent(named `krelay-server`) to the kubernetes cluster, and the agent will forward the traffic to the target ip/hostname.
 
 If the target is an object in the cluster, like `Deployment`, `StatefulSet`, `krelay` will automatically select a pod it managed like `kubectl port-forward` does.
-After that `krelay` will tell the destination IP(i.e. the pod's IP) and the destination port to the agent by sending a special `Header` first, 
-and then the data will be forwarded to the agent and sent to the target address. 
+After that `krelay` will tell the destination IP(i.e. the pod's IP) and the destination port to the agent by sending a special `Header` first,
+and then the data will be forwarded to the agent and sent to the target address.
 
 Specifically, if the target is a `Service`, `krelay` will try to determine the destination address automatically:
 * If the `Service` has a clusterIP, then the clusterIP is used as the destination IP.
