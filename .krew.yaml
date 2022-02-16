@@ -10,6 +10,7 @@ spec:
     This kubectl plugin is a drop-in replacement for `kubectl port-forward` with some enhanced features:
     * Supports UDP port forwarding
     * Forwarding data to the given IP or hostname that is accessible within the kubernetes cluster
+    * Forwarding session will not be interfered after performing rolling updates
   platforms:
   - selector:
       matchLabels:
