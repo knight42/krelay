@@ -22,6 +22,7 @@ import (
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/ports"
+	"github.com/knight42/krelay/pkg/remoteaddr"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
@@ -74,17 +75,18 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	var remoteAddr xnet.Addr
+	var addrGetter remoteaddr.Getter
 	parser := ports.NewParser(args[1:])
 	switch parts[0] {
 	case "ip":
-		remoteAddr, err = xnet.AddrFromIP(parts[1])
+		remoteAddr, err := xnet.AddrFromIP(parts[1])
 		if err != nil {
 			return err
 		}
+		addrGetter = remoteaddr.NewStaticAddr(remoteAddr)
 
 	case "host":
-		remoteAddr = xnet.AddrFromHost(parts[1])
+		addrGetter = remoteaddr.NewStaticAddr(xnet.AddrFromHost(parts[1]))
 
 	default:
 		obj, err := resource.NewBuilder(o.getter).
@@ -96,9 +98,22 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 			return err
 		}
 
-		remoteAddr, err = getAddrForObject(ctx, cs, obj)
+		remoteAddr, err := getAddrForObject(obj)
 		if err != nil {
 			return err
+		}
+
+		if remoteAddr.IsZero() {
+			selector, err := selectorForObject(obj)
+			if err != nil {
+				return err
+			}
+			addrGetter, err = remoteaddr.NewDynamicAddr(cs, ns, selector.String())
+			if err != nil {
+				return err
+			}
+		} else {
+			addrGetter = remoteaddr.NewStaticAddr(remoteAddr)
 		}
 
 		parser = parser.WithObject(obj)
@@ -139,7 +154,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 
 	succeeded := false
 	for _, pp := range forwardPorts {
-		pf := newPortForwarder(o.address, remoteAddr, pp)
+		pf := newPortForwarder(o.address, addrGetter, pp)
 		err := pf.listen()
 		if err != nil {
 			klog.ErrorS(err, "Fail to listen on port", "port", pp.LocalPort)

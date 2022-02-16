@@ -10,28 +10,29 @@ import (
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/ports"
+	"github.com/knight42/krelay/pkg/remoteaddr"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
 type portForwarder struct {
-	addr       string
-	remoteAddr xnet.Addr
+	localAddr  string
+	addrGetter remoteaddr.Getter
 	ports      ports.PortPair
 
 	listener   net.Listener
 	packetConn net.PacketConn
 }
 
-func newPortForwarder(addr string, remoteAddr xnet.Addr, pp ports.PortPair) *portForwarder {
+func newPortForwarder(addr string, addrGetter remoteaddr.Getter, pp ports.PortPair) *portForwarder {
 	return &portForwarder{
-		addr:       addr,
-		remoteAddr: remoteAddr,
+		localAddr:  addr,
+		addrGetter: addrGetter,
 		ports:      pp,
 	}
 }
 
 func (p *portForwarder) listen() error {
-	bindAddr := net.JoinHostPort(p.addr, strconv.Itoa(int(p.ports.LocalPort)))
+	bindAddr := net.JoinHostPort(p.localAddr, strconv.Itoa(int(p.ports.LocalPort)))
 	switch p.ports.Protocol {
 	case constants.ProtocolTCP:
 		l, err := net.Listen(constants.ProtocolTCP, bindAddr)
@@ -80,7 +81,15 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 				return
 			}
 
-			go handleTCPConn(c, streamConn, p.remoteAddr, p.ports.RemotePort)
+			remoteAddr, err := p.addrGetter.Get()
+			if err != nil {
+				klog.ErrorS(err, "Fail to get remote address",
+					constants.LogFieldProtocol, p.ports.Protocol,
+					constants.LogFieldLocalAddr, localAddr,
+				)
+				continue
+			}
+			go handleTCPConn(c, streamConn, remoteAddr, p.ports.RemotePort)
 		}
 
 	case p.packetConn != nil:
@@ -137,7 +146,15 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 			if !ok {
 				dataCh = make(chan []byte)
 				track.Set(key, dataCh)
-				go handleUDPConn(udpConn, cliAddr, dataCh, finish, streamConn, p.remoteAddr, p.ports.RemotePort)
+				remoteAddr, err := p.addrGetter.Get()
+				if err != nil {
+					klog.ErrorS(err, "Fail to get remote address",
+						constants.LogFieldProtocol, p.ports.Protocol,
+						constants.LogFieldLocalAddr, localAddr,
+					)
+					continue
+				}
+				go handleUDPConn(udpConn, cliAddr, dataCh, finish, streamConn, remoteAddr, p.ports.RemotePort)
 			} else {
 				dataCh = v
 			}
