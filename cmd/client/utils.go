@@ -84,7 +84,7 @@ func ensureServer(ctx context.Context, cs kubernetes.Interface, svrImg string) (
 	_, err := cs.AppsV1().Deployments(metav1.NamespaceDefault).Get(ctx, constants.ServerName, metav1.GetOptions{})
 	if err != nil {
 		if k8serr.IsNotFound(err) {
-			klog.V(4).InfoS("Creating deployment krelay-server in default namespace")
+			klog.InfoS("Creating deployment krelay-server in default namespace")
 			_, err = cs.AppsV1().Deployments(metav1.NamespaceDefault).Create(ctx, makeDeployment(svrImg), metav1.CreateOptions{})
 			if err != nil && !k8serr.IsConflict(err) {
 				return "", fmt.Errorf("create krelay-server: %w", err)
@@ -160,7 +160,7 @@ func ensureRunningPods(ctx context.Context, cs kubernetes.Interface, labelMap ma
 	return podList.Items[0].Name, nil
 }
 
-func getAddrForObject(ctx context.Context, cs kubernetes.Interface, obj runtime.Object) (addr xnet.Addr, err error) {
+func getAddrForObject(obj runtime.Object) (addr xnet.Addr, err error) {
 	switch actual := obj.(type) {
 	case *corev1.Pod:
 		return xnet.AddrFromIP(actual.Status.PodIP)
@@ -174,28 +174,11 @@ func getAddrForObject(ctx context.Context, cs kubernetes.Interface, obj runtime.
 		}
 
 		if len(actual.Spec.Selector) == 0 {
-			return addr, fmt.Errorf("service selector must not be empty")
+			return addr, fmt.Errorf("service selector is empty")
 		}
 	}
 
-	selector, err := selectorForObject(obj)
-	if err != nil {
-		return xnet.Addr{}, err
-	}
-
-	ns := obj.(metav1.Object).GetNamespace()
-	podList, err := cs.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
-	if err != nil {
-		return addr, fmt.Errorf("fail to list pods: %w", err)
-	}
-
-	for _, pod := range podList.Items {
-		if pod.Status.Phase == corev1.PodRunning {
-			return xnet.AddrFromIP(pod.Status.PodIP)
-		}
-	}
-
-	return addr, fmt.Errorf("no healthy pods found")
+	return xnet.Addr{}, nil
 }
 
 func selectorForObject(obj runtime.Object) (labels.Selector, error) {

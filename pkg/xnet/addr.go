@@ -28,6 +28,10 @@ func (a *Addr) String() string {
 	}
 }
 
+func (a *Addr) IsZero() bool {
+	return len(a.data) == 0
+}
+
 func AddrFromBytes(addrType byte, data []byte) Addr {
 	return Addr{typ: addrType, data: data}
 }
