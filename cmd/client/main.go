@@ -129,7 +129,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("ensure krelay-server: %w", err)
 	}
-	klog.V(4).InfoS("Got server pod", "name", svrPodName)
+	klog.InfoS("krelay-server is running", "pod", svrPodName)
 
 	transport, upgrader, err := spdy.RoundTripperFor(restCfg)
 	if err != nil {
