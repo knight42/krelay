@@ -30,12 +30,14 @@ import (
 
 func makeDeployment(svrImg string) *appsv1.Deployment {
 	labelMap := map[string]string{"app": constants.ServerName}
+	repliacs := int32(3)
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      constants.ServerName,
 			Namespace: metav1.NamespaceDefault,
 		},
 		Spec: appsv1.DeploymentSpec{
+			Replicas: &repliacs,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labelMap,
 			},
