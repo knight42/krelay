@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -28,16 +26,31 @@ import (
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
+func toPtr[T any](v T) *T {
+	return &v
+}
+
+func makeLabels(ephemeral bool) map[string]string {
+	kind := "ephemeral"
+	if !ephemeral {
+		kind = "persistent"
+	}
+	return map[string]string{
+		"app.kubernetes.io/name": constants.ServerName,
+		"kind":                   kind,
+	}
+}
+
 func makeDeployment(svrImg string) *appsv1.Deployment {
-	labelMap := map[string]string{"app": constants.ServerName}
-	repliacs := int32(3)
+	labelMap := makeLabels(false)
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      constants.ServerName,
 			Namespace: metav1.NamespaceDefault,
+			Labels:    labelMap,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: &repliacs,
+			Replicas: toPtr[int32](3),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labelMap,
 			},
@@ -75,14 +88,7 @@ func makeDeployment(svrImg string) *appsv1.Deployment {
 	}
 }
 
-func watchServer(ctx context.Context, cs kubernetes.Interface) (watch.Interface, error) {
-	return cs.AppsV1().Deployments(metav1.NamespaceDefault).Watch(ctx, metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("metadata.name=%s", constants.ServerName),
-	})
-}
-
-func ensureServer(ctx context.Context, cs kubernetes.Interface, svrImg string) (string, error) {
-	labelMap := map[string]string{"app": constants.ServerName}
+func ensureServerDeployment(ctx context.Context, cs kubernetes.Interface, svrImg string) (string, error) {
 	_, err := cs.AppsV1().Deployments(metav1.NamespaceDefault).Get(ctx, constants.ServerName, metav1.GetOptions{})
 	if err != nil {
 		if k8serr.IsNotFound(err) {
@@ -95,11 +101,18 @@ func ensureServer(ctx context.Context, cs kubernetes.Interface, svrImg string) (
 			return "", fmt.Errorf("get krelay-server: %w", err)
 		}
 	}
-	w, err := watchServer(ctx, cs)
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Minute*5)
+	defer cancel()
+
+	w, err := cs.AppsV1().Deployments(metav1.NamespaceDefault).Watch(timeoutCtx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("metadata.name=%s", constants.ServerName),
+	})
 	if err != nil {
 		return "", fmt.Errorf("watch krelay-server: %w", err)
 	}
 
+	var svrDeploy *appsv1.Deployment
 	steady := false
 loop:
 	for ev := range w.ResultChan() {
@@ -110,13 +123,13 @@ loop:
 		default:
 			continue
 		}
-		d := ev.Object.(*appsv1.Deployment)
-		replicas := *d.Spec.Replicas
-		if replicas != d.Status.UpdatedReplicas || replicas != d.Status.ReadyReplicas {
+		svrDeploy = ev.Object.(*appsv1.Deployment)
+		replicas := *svrDeploy.Spec.Replicas
+		if replicas != svrDeploy.Status.UpdatedReplicas || replicas != svrDeploy.Status.ReadyReplicas {
 			klog.V(3).InfoS("Server is not ready",
 				"expectedReplicas", replicas,
-				"updatedReplicas", d.Status.UpdatedReplicas,
-				"readyReplicas", d.Status.ReadyReplicas,
+				"updatedReplicas", svrDeploy.Status.UpdatedReplicas,
+				"readyReplicas", svrDeploy.Status.ReadyReplicas,
 			)
 			continue
 		}
@@ -128,9 +141,86 @@ loop:
 	if !steady {
 		return "", errors.New("krelay-server is not ready")
 	}
-	return ensureRunningPods(ctx, cs, labelMap)
+	return ensureRunningPods(ctx, cs, svrDeploy.Spec.Selector.MatchLabels)
 }
 
+func ensureServerPod(ctx context.Context, cs kubernetes.Interface, svrImg string) (string, error) {
+	klog.InfoS("Creating pod krelay-server in default namespace")
+	name := fmt.Sprintf("%s-ephemeral", constants.ServerName)
+	pod, err := cs.CoreV1().Pods(metav1.NamespaceDefault).Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    metav1.NamespaceDefault,
+			GenerateName: name + "-",
+			Labels:       makeLabels(true),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:            constants.ServerName,
+					Image:           svrImg,
+					Args:            []string{"-v=4"},
+					ImagePullPolicy: corev1.PullAlways,
+				},
+			},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("create krelay-server pod: %w", err)
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Minute*5)
+	defer cancel()
+
+	w, err := cs.CoreV1().Pods(metav1.NamespaceDefault).Watch(timeoutCtx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("metadata.name=%s", pod.Name),
+	})
+	if err != nil {
+		return "", fmt.Errorf("watch krelay-server pod: %w", err)
+	}
+	defer w.Stop()
+
+	running := false
+loop:
+	for ev := range w.ResultChan() {
+		switch ev.Type {
+		case watch.Deleted, watch.Error:
+			break loop
+		case watch.Modified, watch.Added:
+		default:
+			continue
+		}
+
+		podObj := ev.Object.(*corev1.Pod)
+		for _, status := range podObj.Status.ContainerStatuses {
+			// there is only one container in the pod
+			if status.State.Running != nil {
+				running = true
+				break loop
+			}
+			klog.V(4).InfoS("Pod is not running. Will retry.", "pod", podObj.Name)
+		}
+	}
+	if !running {
+		return "", fmt.Errorf("krelay-server pod is not running")
+	}
+
+	return pod.Name, nil
+}
+
+func removeServerPod(cs kubernetes.Interface, podName string, timeout time.Duration) {
+	klog.InfoS("Removing krelay-server pod", "pod", podName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	err := cs.CoreV1().Pods(metav1.NamespaceDefault).Delete(ctx, podName, metav1.DeleteOptions{
+		GracePeriodSeconds: toPtr[int64](0),
+	})
+	if err != nil && !k8serr.IsNotFound(err) {
+		klog.ErrorS(err, "Fail to remove krelay-server pod", "pod", podName)
+	}
+}
+
+// ensureRunningPods makes sure the pods match the given labels are all running and returns one of them.
 func ensureRunningPods(ctx context.Context, cs kubernetes.Interface, labelMap map[string]string) (string, error) {
 	labelStr := labels.FormatLabels(labelMap)
 	var podList *corev1.PodList
@@ -244,11 +334,4 @@ func createStream(c httpstream.Connection, reqID string) (dataStream httpstream.
 	}()
 
 	return dataStream, errCh, nil
-}
-
-func getProgramName() string {
-	if strings.HasPrefix(filepath.Base(os.Args[0]), "kubectl-") {
-		return "kubectl relay"
-	}
-	return "krelay"
 }

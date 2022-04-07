@@ -22,9 +22,4 @@ linters-settings:
     # even if all enum members are not listed
     default-signifies-exhaustive: true
 issues:
-  exclude-rules:
-    - linters:
-        - staticcheck
-      # SA6002: Storing non-pointer values in sync.Pool allocates memory
-      # This check disallows storing bytes slice in sync.Pool, so I disable it here.
-      text: "SA6002:"
+  exclude-rules: []

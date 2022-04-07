@@ -14,7 +14,7 @@ import (
 
 func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []byte, finish chan<- string, serverConn httpstream.Connection, dstAddr xnet.Addr, dstPort uint16) {
 	requestID := uuid.New()
-	kvs := []interface{}{constants.LogFieldDestAddr, requestID.String()}
+	kvs := []any{constants.LogFieldDestAddr, requestID.String()}
 	defer klog.V(4).InfoS("handleUDPConn exit", kvs...)
 	defer func() {
 		finish <- cliAddr.String()

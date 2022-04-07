@@ -44,8 +44,9 @@ func IsClosedConnectionError(err error) bool {
 
 func newBufferPool(size int) sync.Pool {
 	return sync.Pool{
-		New: func() interface{} {
-			return make([]byte, size)
+		New: func() any {
+			buf := make([]byte, size)
+			return &buf
 		},
 	}
 }

@@ -15,13 +15,14 @@ var tcpPool = newBufferPool(constants.TCPBufferSize)
 // The broker only closes the Read side.
 func tcpBroker(dst, src net.Conn, srcClosed chan struct{}) {
 	defer src.Close()
-	buf := tcpPool.Get().([]byte)
-	defer tcpPool.Put(buf)
+	bufPtr := tcpPool.Get().(*[]byte)
+	defer tcpPool.Put(bufPtr)
 
+	buf := *bufPtr
 	// We can handle errors in a finer-grained manner by inlining io.Copy (it's
 	// simple, and we drop the ReaderFrom or WriterTo checks for
 	// net.Conn->net.Conn transfers, which aren't needed). This would also let
-	// us adjust buffersize.
+	// us adjust buffer size.
 	_, _ = io.CopyBuffer(dst, src, buf)
 
 	close(srcClosed)
