@@ -56,10 +56,11 @@ func ProxyUDP(reqID string, downConn *net.TCPConn, upConn net.Conn) {
 	a.Start()
 
 	go func() {
-		buf := udpPool.Get().([]byte)
-		defer udpPool.Put(buf)
+		bufPtr := udpPool.Get().(*[]byte)
+		defer udpPool.Put(bufPtr)
 		defer close(downClosed)
 
+		buf := *bufPtr
 		for {
 			n, err := ReadUDPFromStream(downConn, buf, time.Second*5)
 			if err != nil {
@@ -77,10 +78,11 @@ func ProxyUDP(reqID string, downConn *net.TCPConn, upConn net.Conn) {
 	}()
 
 	go func() {
-		buf := udpPool.Get().([]byte)
-		defer udpPool.Put(buf)
+		bufPtr := udpPool.Get().(*[]byte)
+		defer udpPool.Put(bufPtr)
 		defer close(upClosed)
 
+		buf := *bufPtr
 		for {
 			n, err := readConnWithTimeout(upConn, buf, time.Second*5)
 			if err != nil {

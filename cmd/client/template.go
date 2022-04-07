@@ -2,8 +2,18 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"text/template"
 )
+
+func getProgramName() string {
+	if strings.HasPrefix(filepath.Base(os.Args[0]), "kubectl-") {
+		return "kubectl relay"
+	}
+	return "krelay"
+}
 
 func example() string {
 	const text = `
@@ -21,6 +31,9 @@ func example() string {
 
   # Listen on port 5000 and 6000 locally, forwarding data to "1.2.3.4:5000" and "1.2.3.4:6000" from the cluster
   {{.Name}} ip/1.2.3.4 5000@tcp 6000@udp
+
+  # Forwarding local port 8080 to 8080 in the service, and delete the krelay-server pod after the command has finished.
+  {{.Name}} --rm svc/my-service 8080
 `
 	tpl, err := template.New("example").Parse(text)
 	if err != nil {

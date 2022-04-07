@@ -6,7 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,9 +30,14 @@ import (
 )
 
 type Options struct {
+	getter genericclioptions.RESTClientGetter
+
+	// serverImage is the image to use for the krelay-server.
 	serverImage string
-	getter      genericclioptions.RESTClientGetter
-	address     string
+	// address is the address to listen on.
+	address string
+	// removePod means we should automatically remove the krelay-server pod when the client exits.
+	removePod bool
 }
 
 // setKubernetesDefaults sets default values on the provided client config for accessing the Kubernetes API.
@@ -47,6 +55,13 @@ func setKubernetesDefaults(config *rest.Config) {
 		// on the client.
 		config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 	}
+}
+
+func (o *Options) ensureServer(ctx context.Context, cs kubernetes.Interface, svrImg string) (string, error) {
+	if o.removePod {
+		return ensureServerPod(ctx, cs, svrImg)
+	}
+	return ensureServerDeployment(ctx, cs, svrImg)
 }
 
 func (o *Options) Run(ctx context.Context, args []string) error {
@@ -125,9 +140,12 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 
 	klog.InfoS("Check if krelay-server exists")
-	svrPodName, err := ensureServer(ctx, cs, o.serverImage)
+	svrPodName, err := o.ensureServer(ctx, cs, o.serverImage)
 	if err != nil {
 		return fmt.Errorf("ensure krelay-server: %w", err)
+	}
+	if o.removePod {
+		defer removeServerPod(cs, svrPodName, time.Minute)
 	}
 	klog.InfoS("krelay-server is running", "pod", svrPodName)
 
@@ -177,6 +195,17 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
+func newSignalContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+	return ctx
+}
+
 func main() {
 	klog.InitFlags(nil)
 	cf := genericclioptions.NewConfigFlags(true)
@@ -195,7 +224,7 @@ service, ip and hostname rather than only pods.`,
 				fmt.Printf("Client version: %s\n", constants.ClientVersion)
 				return nil
 			}
-			return o.Run(context.Background(), args)
+			return o.Run(newSignalContext(), args)
 		},
 		SilenceUsage: true,
 	}
@@ -204,6 +233,7 @@ service, ip and hostname rather than only pods.`,
 	cf.AddFlags(flags)
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
-	flags.StringVar(&o.serverImage, "server-image", constants.ServerImage, "The krelay-server image to use. If the krelay-server deployment does not exist, it will be automatically created using this image.")
+	flags.StringVar(&o.serverImage, "server-image", constants.ServerImage, "The krelay-server image to use.")
+	flags.BoolVar(&o.removePod, "rm", false, "Automatically remove the krelay-server pod after the command has finished.")
 	_ = c.Execute()
 }

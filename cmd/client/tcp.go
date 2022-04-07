@@ -17,7 +17,7 @@ func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAdd
 	defer clientConn.Close()
 
 	requestID := uuid.New()
-	kvs := []interface{}{constants.LogFieldRequestID, requestID.String()}
+	kvs := []any{constants.LogFieldRequestID, requestID.String()}
 	defer klog.V(4).InfoS("handleTCPConn exit", kvs...)
 	klog.InfoS("Handling tcp connection",
 		constants.LogFieldRequestID, requestID.String(),
