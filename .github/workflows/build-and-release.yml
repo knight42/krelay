@@ -1,7 +1,9 @@
 name: "Cross Platform Build"
 on:
-  push: {}
-  pull_request: {}
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
   schedule:
   - cron: "0 0 * * 1" # At 0:00 on Monday
   workflow_dispatch: {}
