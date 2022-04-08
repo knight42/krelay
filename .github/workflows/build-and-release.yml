@@ -4,6 +4,7 @@ on:
     types: [opened, synchronize, reopened]
   push:
     branches: [main]
+    tags: ['*']
   schedule:
   - cron: "0 0 * * 1" # At 0:00 on Monday
   workflow_dispatch: {}
