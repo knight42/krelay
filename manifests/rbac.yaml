@@ -1,0 +1,47 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: krelay
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/portforward
+  verbs:
+  # create the krelay-server pod and forward local port to it
+  - create
+  # watch the krelay-server pod
+  - watch
+  # clean the krelay-server pod
+  - delete
+
+# The following permissions is only requried if you want to forward the local port to the respective objects.
+- apiGroups:
+  - ""
+  resources:
+  - services
+  - pods
+  verbs:
+  - get
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  - deployments
+  - statefulsets
+  - daemonsets
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: krelay
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: krelay
+subjects:
+- kind: User
+  name: bob
