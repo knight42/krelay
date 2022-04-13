@@ -49,8 +49,12 @@ NOTE: The forwarding session is not affected after rolling update.
 
 NOTE: If you only have limited access to the cluster, please make sure the permissions specified in [rbac.yaml](./manifests/rbac.yaml)
 is granted:
+
 ```bash
-kubectl create -f https://raw.githubusercontent.com/knight42/krelay/main/manifests/rbac.yaml
+wget https://raw.githubusercontent.com/knight42/krelay/main/manifests/rbac.yaml
+# Edit rbac.yaml to update the user name
+vim rbac.yaml
+kubectl create -f rbac.yaml
 ```
 
 ### Build from source
