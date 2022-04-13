@@ -34,10 +34,10 @@ type Options struct {
 
 	// serverImage is the image to use for the krelay-server.
 	serverImage string
+	// serverNamespace is the namespace in which krelay-server is located.
+	serverNamespace string
 	// address is the address to listen on.
 	address string
-	// removePod means we should automatically remove the krelay-server pod when the client exits.
-	removePod bool
 }
 
 // setKubernetesDefaults sets default values on the provided client config for accessing the Kubernetes API.
@@ -55,13 +55,6 @@ func setKubernetesDefaults(config *rest.Config) {
 		// on the client.
 		config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 	}
-}
-
-func (o *Options) ensureServer(ctx context.Context, cs kubernetes.Interface, svrImg string) (string, error) {
-	if o.removePod {
-		return ensureServerPod(ctx, cs, svrImg)
-	}
-	return ensureServerDeployment(ctx, cs, svrImg)
 }
 
 func (o *Options) Run(ctx context.Context, args []string) error {
@@ -139,15 +132,13 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	klog.InfoS("Check if krelay-server exists")
-	svrPodName, err := o.ensureServer(ctx, cs, o.serverImage)
+	klog.InfoS("Creating krelay-server", "namespace", o.serverNamespace)
+	svrPodName, err := ensureServerPod(ctx, cs, o.serverImage, o.serverNamespace)
 	if err != nil {
 		return fmt.Errorf("ensure krelay-server: %w", err)
 	}
-	if o.removePod {
-		defer removeServerPod(cs, svrPodName, time.Minute)
-	}
-	klog.InfoS("krelay-server is running", "pod", svrPodName)
+	defer removeServerPod(cs, svrPodName, o.serverNamespace, time.Minute)
+	klog.InfoS("krelay-server is running", "pod", svrPodName, "namespace", o.serverNamespace)
 
 	transport, upgrader, err := spdy.RoundTripperFor(restCfg)
 	if err != nil {
@@ -161,7 +152,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 
 	req := restClient.Post().
 		Resource("pods").
-		Namespace(metav1.NamespaceDefault).Name(svrPodName).
+		Namespace(o.serverNamespace).Name(svrPodName).
 		SubResource("portforward")
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
 	streamConn, _, err := dialer.Dial(constants.PortForwardProtocolV1Name)
@@ -219,7 +210,7 @@ func main() {
 		Example: example(),
 		Long: `This command is similar to "kubectl port-forward", but it also supports UDP and could forward data to a
 service, ip and hostname rather than only pods.`,
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if printVersion {
 				fmt.Printf("Client version: %s\n", constants.ClientVersion)
 				return nil
@@ -233,7 +224,27 @@ service, ip and hostname rather than only pods.`,
 	cf.AddFlags(flags)
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
-	flags.StringVar(&o.serverImage, "server-image", constants.ServerImage, "The krelay-server image to use.")
-	flags.BoolVar(&o.removePod, "rm", false, "Automatically remove the krelay-server pod after the command has finished.")
+	flags.StringVar(&o.serverImage, "server.image", constants.ServerImage, "The krelay-server image to use.")
+	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
+
+	_ = flags.Bool("rm", false, "Automatically remove the krelay-server pod after the command has finished.")
+	_ = flags.MarkDeprecated("rm", "now the krelay-server pod will always be removed after the command has finished, so this flag has no effect and will be removed after a few releases.")
+	_ = flags.MarkHidden("rm")
+
+	// I do not want these flags to show up in --help.
+	_ = flags.MarkHidden("add_dir_header")
+	_ = flags.MarkHidden("log_flush_frequency")
+	_ = flags.MarkHidden("alsologtostderr")
+	_ = flags.MarkHidden("log_backtrace_at")
+	_ = flags.MarkHidden("log_dir")
+	_ = flags.MarkHidden("log_file")
+	_ = flags.MarkHidden("log_file_max_size")
+	_ = flags.MarkHidden("one_output")
+	_ = flags.MarkHidden("logtostderr")
+	_ = flags.MarkHidden("skip_headers")
+	_ = flags.MarkHidden("skip_log_headers")
+	_ = flags.MarkHidden("stderrthreshold")
+	_ = flags.MarkHidden("vmodule")
+
 	_ = c.Execute()
 }

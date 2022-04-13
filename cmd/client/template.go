@@ -32,8 +32,8 @@ func example() string {
   # Listen on port 5000 and 6000 locally, forwarding data to "1.2.3.4:5000" and "1.2.3.4:6000" from the cluster
   {{.Name}} ip/1.2.3.4 5000@tcp 6000@udp
 
-  # Forwarding local port 8080 to 8080 in the service, and delete the krelay-server pod after the command has finished.
-  {{.Name}} --rm svc/my-service 8080
+  # Create the agent in the kube-public namespace, and forward local port 5000 to "1.2.3.4:5000"
+  {{.Name}} --server.namespace kube-public ip/1.2.3.4 5000
 `
 	tpl, err := template.New("example").Parse(text)
 	if err != nil {
