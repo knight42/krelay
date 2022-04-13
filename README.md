@@ -47,6 +47,12 @@ NOTE: The forwarding session is not affected after rolling update.
 | [Krew](https://krew.sigs.k8s.io/)      | `kubectl krew install relay`                                   |
 | Pre-built binaries for macOS, Linux    | [GitHub releases](https://github.com/knight42/krelay/releases) |
 
+NOTE: If you only have limited access to the cluster, please make sure the permissions specified in [rbac.yaml](./manifests/rbac.yaml)
+is granted:
+```bash
+kubectl create -f https://raw.githubusercontent.com/knight42/krelay/main/manifests/rbac.yaml
+```
+
 ### Build from source
 
 ```
@@ -75,17 +81,17 @@ kubectl relay host/redis.cn-north-1.cache.amazonaws.com 6379
 # Listen on port 5000 and 6000 locally, forwarding data to "1.2.3.4:5000" and "1.2.3.4:6000" from the cluster
 kubectl relay ip/1.2.3.4 5000@tcp 6000@udp
 
-# Forwarding local port 8080 to 8080 in the service, and delete the krelay-server pod after the command has finished.
-kubectl relay --rm svc/my-service 8080
+# Create the agent in the kube-public namespace, and forward local port 5000 to "1.2.3.4:5000"
+kubectl relay --server.namespace kube-public ip/1.2.3.4 5000
 ```
 
 ## Flags
 
-| flag             | default                                 | description                                                                |
-|------------------|-----------------------------------------|----------------------------------------------------------------------------|
-| `--address`      | `127.0.0.1`                             | Address to listen on. Only accepts IP addresses as a value.                |
-| `--rm`           | `false`                                 | Automatically remove the krelay-server pod after the command has finished. |
-| `--server-image` | `ghcr.io/knight42/krelay-server:v0.0.1` | The krelay-server image to use.                                            |
+| flag                 | default                                 | description                                                 |
+|----------------------|-----------------------------------------|-------------------------------------------------------------|
+| `--address`          | `127.0.0.1`                             | Address to listen on. Only accepts IP addresses as a value. |
+| `--server.image`     | `ghcr.io/knight42/krelay-server:v0.0.1` | The krelay-server image to use.                             |
+| `--server.namespace` | `default`                               | The namespace in which krelay-server is located.            |
 
 ## How It Works
 
