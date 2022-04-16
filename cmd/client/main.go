@@ -227,24 +227,25 @@ service, ip and hostname rather than only pods.`,
 	flags.StringVar(&o.serverImage, "server.image", constants.ServerImage, "The krelay-server image to use.")
 	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
 
-	_ = flags.Bool("rm", false, "Automatically remove the krelay-server pod after the command has finished.")
-	_ = flags.MarkDeprecated("rm", "now the krelay-server pod will always be removed after the command has finished, so this flag has no effect and will be removed after a few releases.")
-	_ = flags.MarkHidden("rm")
-
 	// I do not want these flags to show up in --help.
-	_ = flags.MarkHidden("add_dir_header")
-	_ = flags.MarkHidden("log_flush_frequency")
-	_ = flags.MarkHidden("alsologtostderr")
-	_ = flags.MarkHidden("log_backtrace_at")
-	_ = flags.MarkHidden("log_dir")
-	_ = flags.MarkHidden("log_file")
-	_ = flags.MarkHidden("log_file_max_size")
-	_ = flags.MarkHidden("one_output")
-	_ = flags.MarkHidden("logtostderr")
-	_ = flags.MarkHidden("skip_headers")
-	_ = flags.MarkHidden("skip_log_headers")
-	_ = flags.MarkHidden("stderrthreshold")
-	_ = flags.MarkHidden("vmodule")
+	hiddenFlags := []string{
+		"add_dir_header",
+		"log_flush_frequency",
+		"alsologtostderr",
+		"log_backtrace_at",
+		"log_dir",
+		"log_file",
+		"log_file_max_size",
+		"one_output",
+		"logtostderr",
+		"skip_headers",
+		"skip_log_headers",
+		"stderrthreshold",
+		"vmodule",
+	}
+	for _, flagName := range hiddenFlags {
+		_ = flags.MarkHidden(flagName)
+	}
 
 	_ = c.Execute()
 }
