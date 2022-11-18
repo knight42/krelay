@@ -1,4 +1,4 @@
-FROM golang:1.17 AS builder
+FROM golang:1.19 AS builder
 WORKDIR /workspace
 ADD . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags '-w -s' -o krelay-server ./cmd/server
