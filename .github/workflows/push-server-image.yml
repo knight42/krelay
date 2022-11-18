@@ -1,0 +1,38 @@
+name: "Build and Push Server Image"
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'The server image tag'
+        required: true
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - uses: actions/checkout@v3
+    - name: Log in to the Container registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      with:
+        driver: docker
+    - name: Build and Push Image
+      uses: docker/build-push-action@v3
+      env:
+        IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+      with:
+        context: .
+        file: manifests/Dockerfile-server
+        push: true
+        tags: ghcr.io/knight42/krelay-server:${{ env.IMAGE_TAG }}
+        platforms: linux/amd64,linux/arm/v7,linux/arm64

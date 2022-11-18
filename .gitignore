@@ -6,7 +6,7 @@
 
 # Unignore all dirs
 !*/
-!Dockerfile
+!Dockerfile-server
 !Makefile
 
 ### Above combination will ignore all files without extension ###
