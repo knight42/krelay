@@ -36,3 +36,9 @@ spec:
         arch: arm64
     {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/kubectl-relay_{{ .TagName }}_linux-arm64.tar.gz" .TagName }}
     bin: kubectl-relay
+  - selector:
+      matchLabels:
+        os: windows
+        arch: amd64
+    {{addURIAndSha "https://github.com/knight42/krelay/releases/download/{{ .TagName }}/kubectl-relay_{{ .TagName }}_windows-amd64.tar.gz" .TagName }}
+    bin: kubectl-relay.exe
