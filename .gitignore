@@ -12,6 +12,7 @@
 ### Above combination will ignore all files without extension ###
 
 .idea/
+dist/
 
 *.swp
 *.[oa]

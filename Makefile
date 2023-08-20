@@ -7,7 +7,7 @@ GOBUILD = CGO_ENABLED=0 go build -trimpath -ldflags $(GO_LDFLAGS)
 
 .PHONY: server-image push-server-image
 server-image:
-	docker build -t ghcr.io/knight42/krelay-server:$(IMAGE_TAG) -f manifests/Dockerfile .
+	docker build -t ghcr.io/knight42/krelay-server:$(IMAGE_TAG) -f manifests/Dockerfile-server .
 push-server-image: server-image
 	docker push ghcr.io/knight42/krelay-server:$(IMAGE_TAG)
 
@@ -33,31 +33,3 @@ coverage:
 clean:
 	rm -rf krelay*
 	rm -rf kubectl-relay*
-
-# Release
-PLATFORM_LIST = \
-        darwin-amd64 \
-        darwin-arm64 \
-        linux-amd64 \
-        linux-arm64 \
-        windows-amd64
-darwin-%:
-	GOARCH=$* GOOS=darwin $(GOBUILD) -o $(NAME)_$(VERSION)_$@/$(NAME) ./cmd/client
-
-linux-%:
-	GOARCH=$* GOOS=linux $(GOBUILD) -o $(NAME)_$(VERSION)_$@/$(NAME) ./cmd/client
-
-windows-%:
-	GOARCH=$* GOOS=windows $(GOBUILD) -o $(NAME)_$(VERSION)_$@/$(NAME).exe ./cmd/client
-
-gz_releases=$(addsuffix .tar.gz, $(PLATFORM_LIST))
-$(gz_releases): %.tar.gz : %
-	case $@ in windows-*) \
-	  tar czf $(NAME)_$(VERSION)_$@ -C $(NAME)_$(VERSION)_$</ ../LICENSE $(NAME).exe ;; \
-	*) \
-	  tar czf $(NAME)_$(VERSION)_$@ -C $(NAME)_$(VERSION)_$</ ../LICENSE $(NAME) ;; \
-	esac
-	sha256sum $(NAME)_$(VERSION)_$@ > $(NAME)_$(VERSION)_$@.sha256
-
-.PHONY: releases
-releases: $(gz_releases)

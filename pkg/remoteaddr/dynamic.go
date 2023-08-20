@@ -61,8 +61,8 @@ func (d *dynamicAddr) watchForUpdates(w watch.Interface) {
 		}
 
 		klog.V(4).InfoS("Try to update remote address", "current", d.podName)
-		err := wait.PollImmediate(time.Second*2, time.Minute, func() (bool, error) {
-			_, err := d.updatePodIP()
+		err := wait.PollUntilContextTimeout(context.TODO(), time.Second*2, time.Minute, true, func(ctx context.Context) (bool, error) {
+			_, err := d.updatePodIP(ctx)
 			if err == nil {
 				return true, nil
 			}
@@ -77,8 +77,8 @@ func (d *dynamicAddr) watchForUpdates(w watch.Interface) {
 	}
 }
 
-func (d *dynamicAddr) updatePodIP() (rv string, err error) {
-	podList, err := d.podCli.List(context.TODO(), metav1.ListOptions{
+func (d *dynamicAddr) updatePodIP(ctx context.Context) (rv string, err error) {
+	podList, err := d.podCli.List(ctx, metav1.ListOptions{
 		LabelSelector: d.selector,
 	})
 	if err != nil {
@@ -103,14 +103,14 @@ func (d *dynamicAddr) updatePodIP() (rv string, err error) {
 }
 
 func (d *dynamicAddr) init() error {
-	rv, err := d.updatePodIP()
+	rv, err := d.updatePodIP(context.Background())
 	if err != nil {
 		return err
 	}
 
 	w, err := watchtools.NewRetryWatcher(rv, &cache.ListWatch{
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-			return d.podCli.Watch(context.TODO(), options)
+			return d.podCli.Watch(context.Background(), options)
 		}},
 	)
 	if err != nil {

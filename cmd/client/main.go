@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -186,17 +187,6 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
-func newSignalContext() context.Context {
-	ctx, cancel := context.WithCancel(context.Background())
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
-	go func() {
-		<-sigCh
-		cancel()
-	}()
-	return ctx
-}
-
 func main() {
 	klog.InitFlags(nil)
 	cf := genericclioptions.NewConfigFlags(true)
@@ -212,10 +202,20 @@ func main() {
 service, ip and hostname rather than only pods.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printVersion {
-				fmt.Printf("Client version: %s\n", constants.ClientVersion)
-				return nil
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+					Version   string
+					BuildDate string
+					Commit    string
+				}{
+					Version:   version,
+					BuildDate: date,
+					Commit:    commit,
+				})
 			}
-			return o.Run(newSignalContext(), args)
+
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+			defer cancel()
+			return o.Run(ctx, args)
 		},
 		SilenceUsage: true,
 	}
