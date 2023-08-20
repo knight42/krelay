@@ -3,7 +3,6 @@ package main
 import (
 	"net"
 
-	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/klog/v2"
 
@@ -13,20 +12,20 @@ import (
 )
 
 func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []byte, finish chan<- string, serverConn httpstream.Connection, dstAddr xnet.Addr, dstPort uint16) {
-	requestID := uuid.New()
-	kvs := []any{constants.LogFieldDestAddr, requestID.String()}
+	requestID := xnet.NewRequestID()
+	kvs := []any{constants.LogFieldDestAddr, requestID}
 	defer klog.V(4).InfoS("handleUDPConn exit", kvs...)
 	defer func() {
 		finish <- cliAddr.String()
 	}()
 	klog.InfoS("Handling udp connection",
-		constants.LogFieldRequestID, requestID.String(),
+		constants.LogFieldRequestID, requestID,
 		constants.LogFieldDestAddr, xnet.JoinHostPort(dstAddr.String(), dstPort),
 		constants.LogFieldLocalAddr, clientConn.LocalAddr().String(),
 		"clientAddr", cliAddr.String(),
 	)
 
-	dataStream, errorChan, err := createStream(serverConn, requestID.String())
+	dataStream, errorChan, err := createStream(serverConn, requestID)
 	if err != nil {
 		klog.ErrorS(err, "Fail to create stream", kvs...)
 		return

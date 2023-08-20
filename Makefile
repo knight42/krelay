@@ -1,9 +1,7 @@
 IMAGE_TAG ?= latest
 
 NAME := kubectl-relay
-VERSION ?= $(shell git describe --tags || echo "unknown")
-GO_LDFLAGS = "-w -s -X github.com/knight42/krelay/pkg/constants.ClientVersion=$(VERSION)"
-GOBUILD = CGO_ENABLED=0 go build -trimpath -ldflags $(GO_LDFLAGS)
+GOBUILD = CGO_ENABLED=0 go build -trimpath
 
 .PHONY: server-image push-server-image
 server-image:

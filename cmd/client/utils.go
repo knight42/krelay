@@ -36,6 +36,7 @@ func ensureServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, names
 			GenerateName: constants.ServerName + "-",
 			Labels: map[string]string{
 				"app.kubernetes.io/name": constants.ServerName,
+				"app":                    constants.ServerName,
 			},
 		},
 		Spec: corev1.PodSpec{

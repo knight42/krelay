@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/knight42/krelay/pkg/testutils/tcp"
@@ -41,7 +40,7 @@ func TestHandleTCPConn(t *testing.T) {
 			return nil, fmt.Errorf("dial: %w", err)
 		}
 		hdr := xnet.Header{
-			RequestID: uuid.New(),
+			RequestID: xnet.NewRequestID(),
 			Protocol:  xnet.ProtocolTCP,
 			Port:      tsPort,
 			Addr:      xnet.AddrFromHost(tsURL.Hostname()),

@@ -4,7 +4,6 @@ import (
 	"io"
 	"net"
 
-	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/klog/v2"
 
@@ -16,17 +15,17 @@ import (
 func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAddr xnet.Addr, dstPort uint16) {
 	defer clientConn.Close()
 
-	requestID := uuid.New()
-	kvs := []any{constants.LogFieldRequestID, requestID.String()}
+	requestID := xnet.NewRequestID()
+	kvs := []any{constants.LogFieldRequestID, requestID}
 	defer klog.V(4).InfoS("handleTCPConn exit", kvs...)
 	klog.InfoS("Handling tcp connection",
-		constants.LogFieldRequestID, requestID.String(),
+		constants.LogFieldRequestID, requestID,
 		constants.LogFieldDestAddr, xnet.JoinHostPort(dstAddr.String(), dstPort),
 		constants.LogFieldLocalAddr, clientConn.LocalAddr().String(),
 		"clientAddr", clientConn.RemoteAddr().String(),
 	)
 
-	dataStream, errorChan, err := createStream(serverConn, requestID.String())
+	dataStream, errorChan, err := createStream(serverConn, requestID)
 	if err != nil {
 		klog.ErrorS(err, "Fail to create stream", kvs...)
 		return
