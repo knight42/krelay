@@ -1,0 +1,35 @@
+name: "[Release] Create GitHub Release and Update krew-index"
+on:
+  push:
+    tags: ['*']
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+env:
+  GO_VERSION: stable
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    name: Release
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        check-latest: true
+    - name: Build
+      run: make -j releases
+    # FIXME: switch to goreleaser
+    - name: Upload Release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        files: kubectl-relay_v*
+        draft: false
+        prerelease: false
+    - name: Update new version in krew-index
+      uses: rajatjindal/krew-release-bot@v0.0.42
