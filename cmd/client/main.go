@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -201,9 +202,17 @@ func main() {
 service, ip and hostname rather than only pods.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printVersion {
-				fmt.Printf("Client version: %s\n", constants.ClientVersion)
-				return nil
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+					Version   string
+					BuildDate string
+					Commit    string
+				}{
+					Version:   version,
+					BuildDate: date,
+					Commit:    commit,
+				})
 			}
+
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer cancel()
 			return o.Run(ctx, args)
