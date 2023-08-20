@@ -56,24 +56,24 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 	case xnet.ProtocolTCP:
 		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolTCP, dstAddr)
 		if err != nil {
-			klog.ErrorS(err, "Fail to create tcp connection", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
+			klog.ErrorS(err, "Fail to create tcp connection", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
 			return
 		}
-		klog.InfoS("Start proxy tcp request", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
-		xnet.ProxyTCP(hdr.RequestID.String(), c, upstreamConn.(*net.TCPConn))
+		klog.InfoS("Start proxy tcp request", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
+		xnet.ProxyTCP(hdr.RequestID, c, upstreamConn.(*net.TCPConn))
 
 	case xnet.ProtocolUDP:
 		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolUDP, dstAddr)
 		if err != nil {
-			klog.ErrorS(err, "Fail to create udp connection", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
+			klog.ErrorS(err, "Fail to create udp connection", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
 			return
 		}
-		klog.InfoS("Start proxy udp request", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr)
+		klog.InfoS("Start proxy udp request", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
 		udpConn := &xnet.UDPConn{UDPConn: upstreamConn.(*net.UDPConn)}
-		xnet.ProxyUDP(hdr.RequestID.String(), c, udpConn)
+		xnet.ProxyUDP(hdr.RequestID, c, udpConn)
 
 	default:
-		klog.InfoS("Unknown protocol", constants.LogFieldRequestID, hdr.RequestID.String(), constants.LogFieldDestAddr, dstAddr, constants.LogFieldProtocol, hdr.Protocol)
+		klog.InfoS("Unknown protocol", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr, constants.LogFieldProtocol, hdr.Protocol)
 	}
 }
 
