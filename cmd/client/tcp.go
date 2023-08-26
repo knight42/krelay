@@ -43,6 +43,17 @@ func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAdd
 		return
 	}
 
+	var ack xnet.Acknowledgement
+	err = ack.FromReader(dataStream)
+	if err != nil {
+		klog.ErrorS(err, "Fail to receive ack", kvs...)
+		return
+	}
+	if ack.Code != xnet.AckCodeOK {
+		klog.ErrorS(ack.Code, "Fail to connect", kvs...)
+		return
+	}
+
 	localError := make(chan struct{})
 	remoteDone := make(chan struct{})
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -40,6 +41,31 @@ func (o *options) run(ctx context.Context) error {
 	}
 }
 
+func writeACK(c net.Conn, ack xnet.Acknowledgement) error {
+	data := ack.Marshal()
+	_, err := c.Write(data)
+	return err
+}
+
+func ackCodeFromErr(err error) xnet.AckCode {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		if dnsErr.IsNotFound {
+			return xnet.AckCodeNoSuchHost
+		}
+		if dnsErr.IsTimeout {
+			return xnet.AckCodeResolveTimeout
+		}
+	}
+
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Timeout() {
+		return xnet.AckCodeConnectTimeout
+	}
+
+	return xnet.AckCodeUnknownError
+}
+
 func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 	defer c.Close()
 
@@ -57,6 +83,16 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolTCP, dstAddr)
 		if err != nil {
 			klog.ErrorS(err, "Fail to create tcp connection", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
+			_ = writeACK(c, xnet.Acknowledgement{
+				Code: ackCodeFromErr(err),
+			})
+			return
+		}
+		err = writeACK(c, xnet.Acknowledgement{
+			Code: xnet.AckCodeOK,
+		})
+		if err != nil {
+			klog.ErrorS(err, "Fail to write ack", constants.LogFieldRequestID, hdr.RequestID)
 			return
 		}
 		klog.InfoS("Start proxy tcp request", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
@@ -66,6 +102,16 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolUDP, dstAddr)
 		if err != nil {
 			klog.ErrorS(err, "Fail to create udp connection", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
+			_ = writeACK(c, xnet.Acknowledgement{
+				Code: ackCodeFromErr(err),
+			})
+			return
+		}
+		err = writeACK(c, xnet.Acknowledgement{
+			Code: xnet.AckCodeOK,
+		})
+		if err != nil {
+			klog.ErrorS(err, "Fail to write ack", constants.LogFieldRequestID, hdr.RequestID)
 			return
 		}
 		klog.InfoS("Start proxy udp request", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)

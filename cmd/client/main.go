@@ -224,7 +224,7 @@ service, ip and hostname rather than only pods.`,
 	cf.AddFlags(flags)
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
-	flags.StringVar(&o.serverImage, "server.image", constants.ServerImage, "The krelay-server image to use.")
+	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.2", "The krelay-server image to use.")
 	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
 
 	// I do not want these flags to show up in --help.
