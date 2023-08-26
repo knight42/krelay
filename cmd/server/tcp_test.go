@@ -49,6 +49,14 @@ func TestHandleTCPConn(t *testing.T) {
 		if err != nil {
 			return nil, fmt.Errorf("write header: %w", err)
 		}
+		var ack xnet.Acknowledgement
+		err = ack.FromReader(c)
+		if err != nil {
+			return nil, fmt.Errorf("read ack: %w", err)
+		}
+		if ack.Code != xnet.AckCodeOK {
+			return nil, fmt.Errorf("ack: %s", ack.Code.Error())
+		}
 		return c, nil
 	}
 

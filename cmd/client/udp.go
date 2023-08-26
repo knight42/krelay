@@ -43,6 +43,17 @@ func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []by
 		return
 	}
 
+	var ack xnet.Acknowledgement
+	err = ack.FromReader(dataStream)
+	if err != nil {
+		klog.ErrorS(err, "Fail to receive ack", kvs...)
+		return
+	}
+	if ack.Code != xnet.AckCodeOK {
+		klog.ErrorS(ack.Code, "Fail to connect", kvs...)
+		return
+	}
+
 	upClosed := make(chan struct{})
 	go func() {
 		var (
