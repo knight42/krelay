@@ -48,6 +48,18 @@ func ensureServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, names
 					ImagePullPolicy: corev1.PullAlways,
 				},
 			},
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       "kubernetes.io/hostname",
+					WhenUnsatisfiable: "ScheduleAnyway",
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": constants.ServerName,
+						},
+					},
+				},
+			},
 		},
 	}, metav1.CreateOptions{})
 	if err != nil {
