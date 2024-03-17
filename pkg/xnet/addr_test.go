@@ -14,21 +14,21 @@ func TestAddrSerialization(t *testing.T) {
 		expectedStr   string
 	}{
 		"AddrFromBytes: ipv4": {
-			getAddr: func(t *testing.T) Addr {
+			getAddr: func(_ *testing.T) Addr {
 				return AddrFromBytes(AddrTypeIP, net.IPv4(192, 168, 1, 1).To4())
 			},
 			expectedBytes: []byte{192, 168, 1, 1},
 			expectedStr:   "192.168.1.1",
 		},
 		"AddrFromBytes: ipv6": {
-			getAddr: func(t *testing.T) Addr {
+			getAddr: func(_ *testing.T) Addr {
 				return AddrFromBytes(AddrTypeIP, net.IPv6linklocalallnodes)
 			},
 			expectedBytes: []byte{0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01},
 			expectedStr:   "ff02::1",
 		},
 		"AddrFromHost": {
-			getAddr: func(t *testing.T) Addr {
+			getAddr: func(_ *testing.T) Addr {
 				return AddrFromHost("www.google.com")
 			},
 			expectedBytes: []byte("www.google.com"),

@@ -128,7 +128,7 @@ func main() {
 	o := options{}
 	c := cobra.Command{
 		Use: constants.ServerName,
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
+		RunE: func(_ *cobra.Command, _ []string) (err error) {
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 			defer cancel()
 			return o.run(ctx)

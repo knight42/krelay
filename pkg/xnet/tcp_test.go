@@ -16,7 +16,7 @@ import (
 
 func TestProxyHTTPS(t *testing.T) {
 	const msg = "Hello, World!"
-	ts, tsURL, _ := tcp.NewTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+	ts, tsURL, _ := tcp.NewTLSServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(msg))
 	})
 	defer ts.Close()
