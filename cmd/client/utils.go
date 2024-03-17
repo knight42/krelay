@@ -29,7 +29,7 @@ func toPtr[T any](v T) *T {
 	return &v
 }
 
-func ensureServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, namespace string) (string, error) {
+func createServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, namespace string) (string, error) {
 	pod, err := cs.CoreV1().Pods(namespace).Create(ctx, &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    namespace,
@@ -52,7 +52,7 @@ func ensureServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, names
 				{
 					MaxSkew:           1,
 					TopologyKey:       "kubernetes.io/hostname",
-					WhenUnsatisfiable: "ScheduleAnyway",
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
 					LabelSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
 							"app": constants.ServerName,
@@ -63,17 +63,20 @@ func ensureServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, names
 		},
 	}, metav1.CreateOptions{})
 	if err != nil {
-		return "", fmt.Errorf("create krelay-server pod: %w", err)
+		return "", err
 	}
+	return pod.Name, nil
+}
 
+func ensureServerPodIsRunning(ctx context.Context, cs kubernetes.Interface, namespace, podName string) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Minute*5)
 	defer cancel()
 
 	w, err := cs.CoreV1().Pods(namespace).Watch(timeoutCtx, metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("metadata.name=%s", pod.Name),
+		FieldSelector: fmt.Sprintf("metadata.name=%s", podName),
 	})
 	if err != nil {
-		return "", fmt.Errorf("watch krelay-server pod: %w", err)
+		return fmt.Errorf("watch krelay-server pod: %w", err)
 	}
 	defer w.Stop()
 
@@ -99,13 +102,13 @@ loop:
 		}
 	}
 	if !running {
-		return "", fmt.Errorf("krelay-server pod is not running")
+		return fmt.Errorf("krelay-server pod is not running")
 	}
 
-	return pod.Name, nil
+	return nil
 }
 
-func removeServerPod(cs kubernetes.Interface, podName, namespace string, timeout time.Duration) {
+func removeServerPod(cs kubernetes.Interface, namespace, podName string, timeout time.Duration) {
 	klog.InfoS("Removing krelay-server pod", "pod", podName)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

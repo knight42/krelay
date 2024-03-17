@@ -134,11 +134,16 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 
 	klog.InfoS("Creating krelay-server", "namespace", o.serverNamespace)
-	svrPodName, err := ensureServerPod(ctx, cs, o.serverImage, o.serverNamespace)
+	svrPodName, err := createServerPod(ctx, cs, o.serverImage, o.serverNamespace)
 	if err != nil {
-		return fmt.Errorf("ensure krelay-server: %w", err)
+		return fmt.Errorf("create krelay-server pod: %w", err)
 	}
-	defer removeServerPod(cs, svrPodName, o.serverNamespace, time.Minute)
+	defer removeServerPod(cs, o.serverNamespace, svrPodName, time.Minute)
+
+	err = ensureServerPodIsRunning(ctx, cs, o.serverNamespace, svrPodName)
+	if err != nil {
+		return fmt.Errorf("ensure krelay-server is running: %w", err)
+	}
 	klog.InfoS("krelay-server is running", "pod", svrPodName, "namespace", o.serverNamespace)
 
 	transport, upgrader, err := spdy.RoundTripperFor(restCfg)
