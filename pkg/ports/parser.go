@@ -26,7 +26,6 @@ func (p *Parser) Parse() ([]PortPair, error) {
 	var (
 		allPorts portsInObject
 		err      error
-		ret      []PortPair
 	)
 
 	if p.obj != nil {
@@ -35,6 +34,8 @@ func (p *Parser) Parse() ([]PortPair, error) {
 			return nil, err
 		}
 	}
+
+	ret := make([]PortPair, 0, len(p.args))
 	for _, arg := range p.args {
 		var (
 			proto    string

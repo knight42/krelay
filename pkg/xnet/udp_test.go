@@ -16,7 +16,7 @@ func TestReadUDPFromStream(t *testing.T) {
 	r := require.New(t)
 	n, err := ReadUDPFromStream(data, buf, 0)
 	r.NoError(err)
-	r.Equal(n, 3)
+	r.Equal(3, n)
 	r.Equal(buf[:n], []byte("012"))
 }
 
@@ -37,7 +37,7 @@ func TestUDPConn(t *testing.T) {
 			t.Errorf("ReadFrom: %v", err)
 			return
 		}
-		if !assert.Equal(t, n, 3) {
+		if !assert.Equal(t, 3, n) {
 			return
 		}
 		if !assert.Equal(t, []byte{0x0, 0x1, 0x0}, buf[:n]) {
