@@ -18,8 +18,6 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    env:
-      GOLANGCI_LINT_VERSION: v1.54.1
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -33,7 +31,7 @@ jobs:
         with:
           skip-pkg-cache: true
           skip-build-cache: true
-          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          version: 'latest'
 
   test:
     runs-on: ubuntu-latest
