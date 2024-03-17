@@ -1,5 +1,6 @@
 run:
   timeout: 5m
+  modules-download-mode: readonly
 linters:
   enable:
   - exhaustive
@@ -12,9 +13,13 @@ linters:
   - goimports
   - misspell
   - nolintlint
+  - prealloc
   - revive
+  - staticcheck
+  - testifylint
   - unconvert
   - unparam
+  - usestdlibvars
   - whitespace
 linters-settings:
   exhaustive:
@@ -22,4 +27,7 @@ linters-settings:
     # even if all enum members are not listed
     default-signifies-exhaustive: true
 issues:
-  exclude-rules: []
+  exclude-rules:
+  - path: _test.go
+    linters:
+    - errcheck
