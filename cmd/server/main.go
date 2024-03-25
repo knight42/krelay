@@ -6,9 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -129,9 +126,7 @@ func main() {
 	c := cobra.Command{
 		Use: constants.ServerName,
 		RunE: func(_ *cobra.Command, _ []string) (err error) {
-			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
-			defer cancel()
-			return o.run(ctx)
+			return o.run(context.TODO())
 		},
 		SilenceUsage: true,
 	}
