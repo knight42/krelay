@@ -44,8 +44,10 @@ func (p *portForwarder) listen(localIP string) error {
 			return err
 		}
 		p.udpListener = pc
+	default:
+		return fmt.Errorf("unknown protocol: %s", p.ports.Protocol)
 	}
-	return fmt.Errorf("unknown protocol: %s", p.ports.Protocol)
+	return nil
 }
 
 func (p *portForwarder) run(streamConn httpstream.Connection) {

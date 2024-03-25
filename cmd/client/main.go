@@ -39,6 +39,8 @@ type Options struct {
 	serverNamespace string
 	// address is the address to listen on.
 	address string
+	// targetsFile is the file containing the list of targets.
+	targetsFile string
 }
 
 // setKubernetesDefaults sets default values on the provided client config for accessing the Kubernetes API.
@@ -59,13 +61,37 @@ func setKubernetesDefaults(config *rest.Config) {
 }
 
 func (o *Options) Run(ctx context.Context, args []string) error {
-	if len(args) < 2 {
-		return errors.New("TYPE/NAME and list of ports are required for port-forward")
-	}
-
 	ns, _, err := o.getter.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return fmt.Errorf("get namespace: %w", err)
+	}
+
+	var targets []target
+	if len(o.targetsFile) > 0 {
+		fin, err := os.Open(o.targetsFile)
+		if err != nil {
+			return err
+		}
+		defer fin.Close()
+		targets, err = parseTargetsFile(fin, ns)
+		if err != nil {
+			return err
+		}
+	} else {
+		if len(args) < 2 {
+			return errors.New("TYPE/NAME and list of ports are required for port-forward")
+		}
+		err := validateFields(args)
+		if err != nil {
+			return err
+		}
+		targets = []target{
+			{
+				resource:  args[0],
+				ports:     args[1:],
+				namespace: ns,
+			},
+		}
 	}
 
 	restCfg, err := o.getter.ToRESTConfig()
@@ -74,63 +100,49 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 	setKubernetesDefaults(restCfg)
 
-	parts := strings.Split(args[0], "/")
-	if len(parts) > 2 {
-		return fmt.Errorf("unknown resource: %s", args[0])
-	}
-
 	cs, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		return err
 	}
 
-	var addrGetter remoteaddr.Getter
-	parser := ports.NewParser(args[1:])
-	switch parts[0] {
-	case "ip":
-		remoteAddr, err := xnet.AddrFromIP(parts[1])
-		if err != nil {
-			return err
-		}
-		addrGetter = remoteaddr.NewStaticAddr(remoteAddr)
+	var portForwarders []*portForwarder
 
-	case "host":
-		addrGetter = remoteaddr.NewStaticAddr(xnet.AddrFromHost(parts[1]))
-
-	default:
-		obj, err := resource.NewBuilder(o.getter).
-			WithScheme(scheme.Scheme, scheme.Scheme.PrioritizedVersionsAllGroups()...).
-			NamespaceParam(ns).DefaultNamespace().
-			ResourceNames("pods", args[0]).
-			Do().Object()
-		if err != nil {
-			return err
-		}
-
-		remoteAddr, err := getAddrForObject(obj)
-		if err != nil {
-			return err
-		}
-
-		if remoteAddr.IsZero() {
-			selector, err := selectorForObject(obj)
+	for _, targetSpec := range targets {
+		var addrGetter remoteaddr.Getter
+		parser := ports.NewParser(targetSpec.ports)
+		resParts := strings.Split(targetSpec.resource, "/")
+		switch resParts[0] {
+		case "ip":
+			remoteAddr, err := xnet.AddrFromIP(resParts[1])
 			if err != nil {
 				return err
 			}
-			addrGetter, err = remoteaddr.NewDynamicAddr(cs, ns, selector.String())
-			if err != nil {
-				return err
-			}
-		} else {
 			addrGetter = remoteaddr.NewStaticAddr(remoteAddr)
+
+		case "host":
+			addrGetter = remoteaddr.NewStaticAddr(xnet.AddrFromHost(resParts[1]))
+
+		default:
+			obj, err := resource.NewBuilder(o.getter).
+				WithScheme(scheme.Scheme, scheme.Scheme.PrioritizedVersionsAllGroups()...).
+				NamespaceParam(ns).DefaultNamespace().
+				ResourceNames("pods", targetSpec.resource).
+				Do().Object()
+			if err != nil {
+				return err
+			}
+
+			addrGetter, err = addrGetterForObject(obj, cs, ns)
+			parser = parser.WithObject(obj)
 		}
 
-		parser = parser.WithObject(obj)
-	}
-
-	forwardPorts, err := parser.Parse()
-	if err != nil {
-		return err
+		forwardPorts, err := parser.Parse()
+		if err != nil {
+			return err
+		}
+		for _, pp := range forwardPorts {
+			portForwarders = append(portForwarders, newPortForwarder(addrGetter, pp))
+		}
 	}
 
 	klog.InfoS("Creating krelay-server", "namespace", o.serverNamespace)
@@ -168,11 +180,10 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	defer streamConn.Close()
 
 	succeeded := false
-	for _, pp := range forwardPorts {
-		pf := newPortForwarder(addrGetter, pp)
+	for _, pf := range portForwarders {
 		err := pf.listen(o.address)
 		if err != nil {
-			klog.ErrorS(err, "Fail to listen on port", "port", pp.LocalPort)
+			klog.ErrorS(err, "Fail to listen on port", "port", pf.ports.LocalPort)
 		} else {
 			succeeded = true
 		}
@@ -180,7 +191,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 
 	if !succeeded {
-		return fmt.Errorf("unable to listen on any of the requested ports: %v", forwardPorts)
+		return fmt.Errorf("unable to listen on any of the requested ports")
 	}
 
 	select {
@@ -231,6 +242,7 @@ service, ip and hostname rather than only pods.`,
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
 	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.2", "The krelay-server image to use.")
 	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
+	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line.")
 
 	// I do not want these flags to show up in --help.
 	hiddenFlags := []string{

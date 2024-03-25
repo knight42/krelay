@@ -25,6 +25,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
+	"github.com/knight42/krelay/pkg/remoteaddr"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
@@ -124,46 +125,65 @@ func removeServerPod(cs kubernetes.Interface, namespace, podName string, timeout
 	}
 }
 
-func getAddrForObject(obj runtime.Object) (addr xnet.Addr, err error) {
+func addrGetterForObject(obj runtime.Object, cs kubernetes.Interface, ns string) (remoteaddr.Getter, error) {
 	switch actual := obj.(type) {
 	case *corev1.Pod:
-		return xnet.AddrFromIP(actual.Status.PodIP)
+		addr, err := xnet.AddrFromIP(actual.Status.PodIP)
+		if err != nil {
+			return nil, err
+		}
+		return remoteaddr.NewStaticAddr(addr), nil
 
 	case *corev1.Service:
 		if actual.Spec.Type == corev1.ServiceTypeExternalName {
-			return xnet.AddrFromHost(actual.Spec.ExternalName), nil
+			addr := xnet.AddrFromHost(actual.Spec.ExternalName)
+			return remoteaddr.NewStaticAddr(addr), nil
 		}
 		if actual.Spec.ClusterIP != corev1.ClusterIPNone {
-			return xnet.AddrFromIP(actual.Spec.ClusterIP)
+			addr, err := xnet.AddrFromIP(actual.Spec.ClusterIP)
+			if err != nil {
+				return nil, err
+			}
+			return remoteaddr.NewStaticAddr(addr), nil
 		}
 
 		if len(actual.Spec.Selector) == 0 {
-			return addr, fmt.Errorf("service selector is empty")
+			return nil, fmt.Errorf("service selector is empty")
 		}
-	}
 
-	return xnet.Addr{}, nil
-}
-
-func selectorForObject(obj runtime.Object) (labels.Selector, error) {
-	switch actual := obj.(type) {
-	case *corev1.Service:
-		return labels.SelectorFromSet(actual.Spec.Selector), nil
+		selector := labels.SelectorFromSet(actual.Spec.Selector)
+		return remoteaddr.NewDynamicAddr(cs, ns, selector.String())
 
 	case *appsv1.ReplicaSet:
-		return metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+		selector, err := metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+		if err != nil {
+			return nil, err
+		}
+		return remoteaddr.NewDynamicAddr(cs, ns, selector.String())
 
 	case *appsv1.Deployment:
-		return metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+		selector, err := metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+		if err != nil {
+			return nil, err
+		}
+		return remoteaddr.NewDynamicAddr(cs, ns, selector.String())
 
 	case *appsv1.StatefulSet:
-		return metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+		selector, err := metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+		if err != nil {
+			return nil, err
+		}
+		return remoteaddr.NewDynamicAddr(cs, ns, selector.String())
 
 	case *appsv1.DaemonSet:
-		return metav1.LabelSelectorAsSelector(actual.Spec.Selector)
-	default:
-		return nil, fmt.Errorf("selector for %T not implemented", obj)
+		selector, err := metav1.LabelSelectorAsSelector(actual.Spec.Selector)
+		if err != nil {
+			return nil, err
+		}
+		return remoteaddr.NewDynamicAddr(cs, ns, selector.String())
 	}
+
+	return nil, fmt.Errorf("unknown object: %T", obj)
 }
 
 func createStream(c httpstream.Connection, reqID string) (dataStream httpstream.Stream, errCh chan error, err error) {
@@ -208,9 +228,35 @@ func createStream(c httpstream.Connection, reqID string) (dataStream httpstream.
 	return dataStream, errCh, nil
 }
 
-func parseTargetsFile(r io.Reader) ([][]string, error) {
+func validateFields(fields []string) error {
+	if len(fields) < 2 {
+		return fmt.Errorf("invalid format")
+	}
+
+	resourceParts := strings.Split(fields[0], "/")
+	if len(resourceParts) > 2 {
+		return fmt.Errorf("unknown resource: %q", fields[0])
+	}
+
+	if resourceParts[0] == "ip" {
+		isInvalid := net.ParseIP(resourceParts[1]) == nil
+		if isInvalid {
+			return fmt.Errorf("invalid IP address: %q", resourceParts[1])
+		}
+	}
+	return nil
+}
+
+type target struct {
+	resource  string
+	ports     []string
+	namespace string
+}
+
+// TODO: specify namespace in targets file
+func parseTargetsFile(r io.Reader, defaultNamespace string) ([]target, error) {
 	s := bufio.NewScanner(r)
-	var ret [][]string
+	var ret []target
 	lineNo := 0
 	for s.Scan() {
 		lineNo++
@@ -220,26 +266,15 @@ func parseTargetsFile(r io.Reader) ([][]string, error) {
 		}
 
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			return nil, fmt.Errorf("line %d: invalid format", lineNo)
+		err := validateFields(fields)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %w", lineNo, err)
 		}
-
-		resourceParts := strings.Split(fields[0], "/")
-		if len(resourceParts) > 2 {
-			return nil, fmt.Errorf("line: %d: unknown resource: %q", lineNo, fields[0])
-		}
-
-		switch resourceParts[0] {
-		case "ip":
-			isInvalid := net.ParseIP(resourceParts[1]) == nil
-			if isInvalid {
-				return nil, fmt.Errorf("line %d: invalid IP address: %q", lineNo, resourceParts[1])
-			}
-
-		case "host":
-		}
-		ret = append(ret, fields)
+		ret = append(ret, target{
+			resource:  fields[0],
+			ports:     fields[1:],
+			namespace: defaultNamespace,
+		})
 	}
-
 	return ret, nil
 }

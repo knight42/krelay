@@ -10,13 +10,16 @@ import (
 func TestParseTargetsFile(t *testing.T) {
 	testCases := map[string]struct {
 		input     string
-		expect    [][]string
+		expect    []target
 		expectErr string
 	}{
 		"normal": {
 			input: `bar 53@udp 53@tcp`,
-			expect: [][]string{
-				{"bar", "53@udp", "53@tcp"},
+			expect: []target{
+				{
+					resource: "bar",
+					ports:    []string{"53@udp", "53@tcp"},
+				},
 			},
 		},
 		"comment & empty line": {
@@ -28,10 +31,19 @@ host/google.com 443@tcp
 
 pod/foo 8000 8001
 `,
-			expect: [][]string{
-				{"ip/1.2.3.4", "8080"},
-				{"host/google.com", "443@tcp"},
-				{"pod/foo", "8000", "8001"},
+			expect: []target{
+				{
+					resource: "ip/1.2.3.4",
+					ports:    []string{"8080"},
+				},
+				{
+					resource: "host/google.com",
+					ports:    []string{"443@tcp"},
+				},
+				{
+					resource: "pod/foo",
+					ports:    []string{"8000", "8001"},
+				},
 			},
 		},
 		"invalid ip": {
@@ -41,14 +53,14 @@ pod/foo 8000 8001
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			got, err := parseTargetsFile(strings.NewReader(tc.input), "")
+
 			if len(tc.expectErr) == 0 {
-				got, err := parseTargetsFile(strings.NewReader(tc.input))
 				require.NoError(t, err)
 				require.Equal(t, tc.expect, got)
 				return
 			}
 
-			_, err := parseTargetsFile(strings.NewReader(tc.input))
 			require.Error(t, err)
 			t.Logf("error: %v", err)
 			require.ErrorContains(t, err, tc.expectErr)
