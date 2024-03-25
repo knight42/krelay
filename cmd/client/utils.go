@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -203,4 +206,40 @@ func createStream(c httpstream.Connection, reqID string) (dataStream httpstream.
 	}()
 
 	return dataStream, errCh, nil
+}
+
+func parseTargetsFile(r io.Reader) ([][]string, error) {
+	s := bufio.NewScanner(r)
+	var ret [][]string
+	lineNo := 0
+	for s.Scan() {
+		lineNo++
+		line := strings.TrimSpace(s.Text())
+		if len(line) == 0 || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return nil, fmt.Errorf("line %d: invalid format", lineNo)
+		}
+
+		resourceParts := strings.Split(fields[0], "/")
+		if len(resourceParts) > 2 {
+			return nil, fmt.Errorf("line: %d: unknown resource: %q", lineNo, fields[0])
+		}
+
+		switch resourceParts[0] {
+		case "ip":
+			isInvalid := net.ParseIP(resourceParts[1]) == nil
+			if isInvalid {
+				return nil, fmt.Errorf("line %d: invalid IP address: %q", lineNo, resourceParts[1])
+			}
+
+		case "host":
+		}
+		ret = append(ret, fields)
+	}
+
+	return ret, nil
 }
