@@ -169,8 +169,8 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 
 	succeeded := false
 	for _, pp := range forwardPorts {
-		pf := newPortForwarder(o.address, addrGetter, pp)
-		err := pf.listen()
+		pf := newPortForwarder(addrGetter, pp)
+		err := pf.listen(o.address)
 		if err != nil {
 			klog.ErrorS(err, "Fail to listen on port", "port", pp.LocalPort)
 		} else {
