@@ -125,14 +125,17 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		default:
 			obj, err := resource.NewBuilder(o.getter).
 				WithScheme(scheme.Scheme, scheme.Scheme.PrioritizedVersionsAllGroups()...).
-				NamespaceParam(ns).DefaultNamespace().
+				NamespaceParam(targetSpec.namespace).DefaultNamespace().
 				ResourceNames("pods", targetSpec.resource).
 				Do().Object()
 			if err != nil {
 				return err
 			}
 
-			addrGetter, err = addrGetterForObject(obj, cs, ns)
+			addrGetter, err = addrGetterForObject(obj, cs, targetSpec.namespace)
+			if err != nil {
+				return err
+			}
 			parser = parser.WithObject(obj)
 		}
 

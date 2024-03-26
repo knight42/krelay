@@ -9,10 +9,13 @@ import (
 
 func TestParseTargetsFile(t *testing.T) {
 	testCases := map[string]struct {
-		input     string
+		input            string
+		defaultNamespace string
+
 		expect    []target
 		expectErr string
 	}{
+		// valid cases
 		"normal": {
 			input: `bar 53@udp 53@tcp`,
 			expect: []target{
@@ -46,14 +49,55 @@ pod/foo 8000 8001
 				},
 			},
 		},
+		"different namespaces": {
+			defaultNamespace: "foo",
+			input: `
+-n bar1 svc/q 8000
+host/q.com 8000 9000:9001
+-n=bar2 svc/q 8000
+svc/q 8000
+`,
+			expect: []target{
+				{
+					resource:  "svc/q",
+					ports:     []string{"8000"},
+					namespace: "bar1",
+				},
+				{
+					resource:  "host/q.com",
+					ports:     []string{"8000", "9000:9001"},
+					namespace: "foo",
+				},
+				{
+					resource:  "svc/q",
+					ports:     []string{"8000"},
+					namespace: "bar2",
+				},
+				{
+					resource:  "svc/q",
+					ports:     []string{"8000"},
+					namespace: "foo",
+				},
+			},
+		},
+
+		// invalid cases
 		"invalid ip": {
 			input:     `ip/1.2.3 8080`,
 			expectErr: "invalid IP address",
 		},
+		"unknown flag": {
+			input:     `-invalid-flag foo 8080`,
+			expectErr: "flag provided but not defined: -invalid-flag",
+		},
+		"missing value for -n flag": {
+			input:     `-n foo 8080`,
+			expectErr: "invalid syntax",
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			got, err := parseTargetsFile(strings.NewReader(tc.input), "")
+			got, err := parseTargetsFile(strings.NewReader(tc.input), tc.defaultNamespace)
 
 			if len(tc.expectErr) == 0 {
 				require.NoError(t, err)

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -230,7 +231,7 @@ func createStream(c httpstream.Connection, reqID string) (dataStream httpstream.
 
 func validateFields(fields []string) error {
 	if len(fields) < 2 {
-		return fmt.Errorf("invalid format")
+		return fmt.Errorf("invalid syntax")
 	}
 
 	resourceParts := strings.Split(fields[0], "/")
@@ -253,11 +254,16 @@ type target struct {
 	namespace string
 }
 
-// TODO: specify namespace in targets file
 func parseTargetsFile(r io.Reader, defaultNamespace string) ([]target, error) {
+	fs := flag.NewFlagSet("targets", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var ns string
+	fs.StringVar(&ns, "n", defaultNamespace, "namespace")
+
 	s := bufio.NewScanner(r)
 	var ret []target
 	lineNo := 0
+
 	for s.Scan() {
 		lineNo++
 		line := strings.TrimSpace(s.Text())
@@ -266,14 +272,21 @@ func parseTargetsFile(r io.Reader, defaultNamespace string) ([]target, error) {
 		}
 
 		fields := strings.Fields(line)
-		err := validateFields(fields)
+		// We need to reset the state before parsing the next line
+		ns = defaultNamespace
+		err := fs.Parse(fields)
+		if err != nil {
+			return nil, fmt.Errorf("line: %d: %w", lineNo, err)
+		}
+		remain := fs.Args()
+		err = validateFields(remain)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: %w", lineNo, err)
 		}
 		ret = append(ret, target{
-			resource:  fields[0],
-			ports:     fields[1:],
-			namespace: defaultNamespace,
+			resource:  remain[0],
+			ports:     remain[1:],
+			namespace: ns,
 		})
 	}
 	return ret, nil
