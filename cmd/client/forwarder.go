@@ -15,37 +15,35 @@ import (
 )
 
 type portForwarder struct {
-	localAddr  string
 	addrGetter remoteaddr.Getter
 	ports      ports.PortPair
 
-	listener   net.Listener
-	packetConn net.PacketConn
+	tcpListener net.Listener
+	udpListener net.PacketConn
 }
 
-func newPortForwarder(addr string, addrGetter remoteaddr.Getter, pp ports.PortPair) *portForwarder {
+func newPortForwarder(addrGetter remoteaddr.Getter, pp ports.PortPair) *portForwarder {
 	return &portForwarder{
-		localAddr:  addr,
 		addrGetter: addrGetter,
 		ports:      pp,
 	}
 }
 
-func (p *portForwarder) listen() error {
-	bindAddr := net.JoinHostPort(p.localAddr, strconv.Itoa(int(p.ports.LocalPort)))
+func (p *portForwarder) listen(localIP string) error {
+	bindAddr := net.JoinHostPort(localIP, strconv.Itoa(int(p.ports.LocalPort)))
 	switch p.ports.Protocol {
 	case constants.ProtocolTCP:
 		l, err := net.Listen(constants.ProtocolTCP, bindAddr)
 		if err != nil {
 			return err
 		}
-		p.listener = l
+		p.tcpListener = l
 	case constants.ProtocolUDP:
 		pc, err := net.ListenPacket(constants.ProtocolUDP, bindAddr)
 		if err != nil {
 			return err
 		}
-		p.packetConn = pc
+		p.udpListener = pc
 	default:
 		return fmt.Errorf("unknown protocol: %s", p.ports.Protocol)
 	}
@@ -54,8 +52,8 @@ func (p *portForwarder) listen() error {
 
 func (p *portForwarder) run(streamConn httpstream.Connection) {
 	switch {
-	case p.listener != nil:
-		l := p.listener
+	case p.tcpListener != nil:
+		l := p.tcpListener
 		defer l.Close()
 
 		localAddr := l.Addr().String()
@@ -92,8 +90,8 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 			go handleTCPConn(c, streamConn, remoteAddr, p.ports.RemotePort)
 		}
 
-	case p.packetConn != nil:
-		pc := p.packetConn
+	case p.udpListener != nil:
+		pc := p.udpListener
 		defer pc.Close()
 
 		udpConn := &xnet.UDPConn{UDPConn: pc.(*net.UDPConn)}

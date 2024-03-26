@@ -5,21 +5,21 @@
 
 # krelay
 
-This kubectl plugin is a drop-in replacement for `kubectl port-forward` with some enhanced features.
+`krelay` is a drop-in replacement for `kubectl port-forward` with some enhanced features.
 
 ## Table of Contents
 
-- [Features](#features)
+- [Highlights](#highlights)
 - [Demo](#demo)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Flags](#flags)
 - [How It Works](#how-it-works)
 
-## Features
+## ✨Highlights
 
-* Compatible with `kubectl port-forward`
 * Supports UDP port forwarding
+* Supports simultaneous forwarding of data to multiple targets.
 * Forwarding data to the given IP or hostname that is accessible within the kubernetes cluster
   * You could forward a local port to a port in the `Service` or a workload like `Deployment` or `StatefulSet`, and the forwarding session will not be interfered even if you perform rolling updates.
   * The hostname is resolved inside the cluster, so you don't need to change your local nameserver or modify the `/etc/hosts`.
@@ -34,11 +34,31 @@ This kubectl plugin is a drop-in replacement for `kubectl port-forward` with som
 
 [![asciicast](https://asciinema.org/a/452747.svg)](https://asciinema.org/a/452747)
 
-NOTE: The forwarding session is not affected after rolling update.
+> [!NOTE]
+> The forwarding session is not affected after rolling update.
 
 ### Forwarding traffic to a IP or hostname
 
 [![asciicast](https://asciinema.org/a/452749.svg)](https://asciinema.org/a/452749)
+
+### Forwarding traffic to multiple targets
+
+```bash
+$ cat > targets.txt <<EOF
+# Each line in the file represents a target, the syntax is the same as the command line.
+# Empty line or line starts with '#' or '//' will be ignored.
+
+# namespace of the object can be specified by the -n flag
+-n kube-system svc/kube-dns 10053:53@udp
+
+# The default namespace is used if no namespace is specified
+svc/nginx 8080:80
+
+host/redis.cn-north-1.cache.amazonaws.com 6379
+EOF
+
+$ kubectl relay -f targets.txt
+```
 
 ## Installation
 
@@ -47,7 +67,8 @@ NOTE: The forwarding session is not affected after rolling update.
 | [Krew](https://krew.sigs.k8s.io/)      | `kubectl krew install relay`                                   |
 | Pre-built binaries for macOS, Linux    | [GitHub releases](https://github.com/knight42/krelay/releases) |
 
-NOTE: If you only have limited access to the cluster, please make sure the permissions specified in [rbac.yaml](./manifests/rbac.yaml)
+> [!NOTE]
+> If you only have limited access to the cluster, please make sure the permissions specified in [rbac.yaml](./manifests/rbac.yaml)
 is granted:
 
 ```bash
@@ -94,6 +115,7 @@ kubectl relay --server.namespace kube-public ip/1.2.3.4 5000
 | flag                 | default                                 | description                                                 |
 |----------------------|-----------------------------------------|-------------------------------------------------------------|
 | `--address`          | `127.0.0.1`                             | Address to listen on. Only accepts IP addresses as a value. |
+| `-f`/`--file`        | N/A                                     | Forward traffic to the targets specified in the given file. |
 | `--server.image`     | `ghcr.io/knight42/krelay-server:v0.0.1` | The krelay-server image to use.                             |
 | `--server.namespace` | `default`                               | The namespace in which krelay-server is located.            |
 
@@ -114,11 +136,11 @@ The `Header` looks like this:
 
 |            | Version | Header Length | Request ID | Protocol | Destination Port | Address Type | Address  |
 |------------|---------|---------------|------------|----------|------------------|--------------|----------|
-| Byte Count | 1       | 2             | 16         | 1        | 2                | 1            | Variable |
+| Byte Count | 1       | 2             | 5          | 1        | 2                | 1            | Variable |
 
 * `Version`: This field is preserved for future extension, and it is not in-use now.
 * `Header Length`: The total length of the `Header` in bytes.
-* `Request ID`: The ID of the request(now a UUID is used as the request ID).
+* `Request ID`: The ID of the request.
 * `Protocol`: The protocol of the request, `0` stands for TCP and `1` stands for UDP.
 * `Destination Port`: The destination port of the request.
 * `Address Type`: The type of the destination address, `0` stands for IP and `1` stands for hostname.
