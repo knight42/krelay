@@ -44,4 +44,4 @@ roleRef:
   name: krelay
 subjects:
 - kind: User
-  name: bob
+  name: <Please fill in your username here>
