@@ -50,7 +50,6 @@ func createServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, names
 				{
 					Name:            constants.ServerName,
 					Image:           svrImg,
-					Args:            []string{"-v=4"},
 					ImagePullPolicy: corev1.PullAlways,
 				},
 			},

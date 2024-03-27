@@ -52,7 +52,6 @@ func (p *portForwarder) listen(localIP string) error {
 }
 
 func (p *portForwarder) run(streamConn httpstream.Connection) {
-	// logger := slog.With(slog.String(constants.LogFieldProtocol, p.ports.Protocol), slog.String(constants.LogFieldLocalAddr, p.tcpListener.Addr().String()), slog.Int("remotePort", p.ports.RemotePort))
 	switch {
 	case p.tcpListener != nil:
 		lis := p.tcpListener

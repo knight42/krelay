@@ -144,6 +144,6 @@ func main() {
 	}
 	flags := c.Flags()
 	flags.DurationVar(&o.connectTimeout, "connect-timeout", time.Second*10, "Timeout for connecting to upstream")
-	flags.IntP("v", "v", 0, "bogus flag to keep backward compatibility")
+	flags.IntP("v", "v", 0, "bogus flag to keep backward compatibility. This flag will be removed in the future.")
 	_ = c.Execute()
 }
