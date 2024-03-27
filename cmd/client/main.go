@@ -68,11 +68,16 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 
 	var targets []target
 	if len(o.targetsFile) > 0 {
-		fin, err := os.Open(o.targetsFile)
-		if err != nil {
-			return err
+		var fin *os.File
+		if o.targetsFile == "-" {
+			fin = os.Stdin
+		} else {
+			fin, err = os.Open(o.targetsFile)
+			if err != nil {
+				return err
+			}
+			defer fin.Close()
 		}
-		defer fin.Close()
 		targets, err = parseTargetsFile(fin, ns)
 		if err != nil {
 			return err
