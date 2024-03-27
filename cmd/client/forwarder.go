@@ -2,15 +2,16 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 
 	"k8s.io/apimachinery/pkg/util/httpstream"
-	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/ports"
 	"github.com/knight42/krelay/pkg/remoteaddr"
+	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
@@ -53,14 +54,16 @@ func (p *portForwarder) listen(localIP string) error {
 func (p *portForwarder) run(streamConn httpstream.Connection) {
 	switch {
 	case p.tcpListener != nil:
-		l := p.tcpListener
-		defer l.Close()
+		lis := p.tcpListener
+		defer lis.Close()
 
-		localAddr := l.Addr().String()
-		klog.InfoS("Forwarding",
-			constants.LogFieldProtocol, p.ports.Protocol,
-			constants.LogFieldLocalAddr, localAddr,
-			constants.LogFieldRemotePort, p.ports.RemotePort,
+		localAddr := lis.Addr().String()
+		l := slog.With(
+			slog.String(constants.LogFieldProtocol, p.ports.Protocol),
+			slog.String(constants.LogFieldLocalAddr, localAddr),
+		)
+		l.Info("Forwarding",
+			slogutil.Uint16(constants.LogFieldRemotePort, p.ports.RemotePort),
 		)
 
 		for {
@@ -70,21 +73,15 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 			default:
 			}
 
-			c, err := l.Accept()
+			c, err := lis.Accept()
 			if err != nil {
-				klog.ErrorS(err, "Fail to accept tcp connection",
-					constants.LogFieldProtocol, p.ports.Protocol,
-					constants.LogFieldLocalAddr, localAddr,
-				)
+				l.Error("Fail to accept tcp connection", slogutil.Error(err))
 				return
 			}
 
 			remoteAddr, err := p.addrGetter.Get()
 			if err != nil {
-				klog.ErrorS(err, "Fail to get remote address",
-					constants.LogFieldProtocol, p.ports.Protocol,
-					constants.LogFieldLocalAddr, localAddr,
-				)
+				l.Error("Fail to get remote address", slogutil.Error(err))
 				continue
 			}
 			go handleTCPConn(c, streamConn, remoteAddr, p.ports.RemotePort)
@@ -96,10 +93,12 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 
 		udpConn := &xnet.UDPConn{UDPConn: pc.(*net.UDPConn)}
 		localAddr := pc.LocalAddr().String()
-		klog.InfoS("Forwarding",
-			constants.LogFieldProtocol, p.ports.Protocol,
-			constants.LogFieldLocalAddr, localAddr,
-			constants.LogFieldRemotePort, p.ports.RemotePort,
+		l := slog.With(
+			slog.String(constants.LogFieldProtocol, p.ports.Protocol),
+			slog.String(constants.LogFieldLocalAddr, localAddr),
+		)
+		l.Info("Forwarding",
+			slogutil.Uint16(constants.LogFieldRemotePort, p.ports.RemotePort),
 		)
 		track := newConnTrack()
 		finish := make(chan string)
@@ -107,10 +106,8 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 		go func() {
 			for key := range finish {
 				track.Delete(key)
-				klog.V(4).InfoS("Remove udp conn from conntrack table",
-					"key", key,
-					constants.LogFieldProtocol, p.ports.Protocol,
-					constants.LogFieldLocalAddr, localAddr,
+				l.Debug("Remove udp conn from conntrack table",
+					slog.String("key", key),
 				)
 			}
 		}()
@@ -128,9 +125,8 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 
 			n, cliAddr, err := udpConn.ReadFrom(buf)
 			if err != nil {
-				klog.ErrorS(err, "Fail to read udp packet",
-					constants.LogFieldProtocol, p.ports.Protocol,
-					constants.LogFieldLocalAddr, localAddr,
+				l.Error("Fail to read udp packet",
+					slogutil.Error(err),
 				)
 				return
 			}
@@ -146,9 +142,8 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 				track.Set(key, dataCh)
 				remoteAddr, err := p.addrGetter.Get()
 				if err != nil {
-					klog.ErrorS(err, "Fail to get remote address",
-						constants.LogFieldProtocol, p.ports.Protocol,
-						constants.LogFieldLocalAddr, localAddr,
+					l.Error("Fail to get remote address",
+						slogutil.Error(err),
 					)
 					continue
 				}

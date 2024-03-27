@@ -1,33 +1,33 @@
 package main
 
 import (
+	"log/slog"
 	"net"
 
 	"k8s.io/apimachinery/pkg/util/httpstream"
-	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
+	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xio"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
 func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []byte, finish chan<- string, serverConn httpstream.Connection, dstAddr xnet.Addr, dstPort uint16) {
 	requestID := xnet.NewRequestID()
-	kvs := []any{constants.LogFieldDestAddr, requestID}
-	defer klog.V(4).InfoS("handleUDPConn exit", kvs...)
+	l := slog.With(slog.String(constants.LogFieldRequestID, requestID))
+	defer l.Debug("handleUDPConn exit")
 	defer func() {
 		finish <- cliAddr.String()
 	}()
-	klog.InfoS("Handling udp connection",
-		constants.LogFieldRequestID, requestID,
-		constants.LogFieldDestAddr, xnet.JoinHostPort(dstAddr.String(), dstPort),
-		constants.LogFieldLocalAddr, clientConn.LocalAddr().String(),
-		"clientAddr", cliAddr.String(),
+	l.Info("Handling udp connection",
+		slog.String(constants.LogFieldDestAddr, xnet.JoinHostPort(dstAddr.String(), dstPort)),
+		slog.String(constants.LogFieldLocalAddr, clientConn.LocalAddr().String()),
+		slog.String("clientAddr", cliAddr.String()),
 	)
 
 	dataStream, errorChan, err := createStream(serverConn, requestID)
 	if err != nil {
-		klog.ErrorS(err, "Fail to create stream", kvs...)
+		l.Error("Fail to create stream", slogutil.Error(err))
 		return
 	}
 
@@ -39,18 +39,18 @@ func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []by
 	}
 	_, err = xio.WriteFull(dataStream, hdr.Marshal())
 	if err != nil {
-		klog.ErrorS(err, "Fail to write header", kvs...)
+		l.Error("Fail to write header", slogutil.Error(err))
 		return
 	}
 
 	var ack xnet.Acknowledgement
 	err = ack.FromReader(dataStream)
 	if err != nil {
-		klog.ErrorS(err, "Fail to receive ack", kvs...)
+		l.Error("Fail to receive ack", slogutil.Error(err))
 		return
 	}
 	if ack.Code != xnet.AckCodeOK {
-		klog.ErrorS(ack.Code, "Fail to connect", kvs...)
+		l.Error("Fail to connect", slogutil.Error(ack.Code))
 		return
 	}
 
@@ -77,7 +77,7 @@ func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []by
 	}()
 
 	go func() {
-		defer klog.V(4).InfoS("Server close connection", kvs...)
+		defer l.Debug("Server close connection")
 		defer close(upClosed)
 
 		buf := make([]byte, constants.UDPBufferSize)
@@ -97,6 +97,6 @@ func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []by
 	// always expect something on errorChan (it may be nil)
 	err = <-errorChan
 	if err != nil {
-		klog.ErrorS(err, "Unexpected error from stream", kvs...)
+		l.Error("Unexpected error from stream", slogutil.Error(err))
 	}
 }

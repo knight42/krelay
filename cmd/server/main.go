@@ -3,15 +3,15 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
 	"github.com/spf13/cobra"
-	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
+	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
@@ -27,12 +27,18 @@ func (o *options) run(ctx context.Context) error {
 	defer tcpListener.Close()
 
 	dialer := net.Dialer{Timeout: o.connectTimeout}
-
+	slog.Info("Accepting connections")
 	for {
 		c, err := tcpListener.Accept()
 		if err != nil {
-			klog.ErrorS(err, "Fail to accept connection")
-			continue
+			var tmpErr interface {
+				Temporary() bool
+			}
+			if errors.As(err, &tmpErr) && tmpErr.Temporary() {
+				continue
+			}
+			slog.Error("Fail to accept connection", slogutil.Error(err))
+			return err
 		}
 		go handleConn(ctx, c.(*net.TCPConn), &dialer)
 	}
@@ -69,17 +75,17 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 	hdr := xnet.Header{}
 	err := hdr.FromReader(c)
 	if err != nil {
-		klog.ErrorS(err, "Fail to read header")
+		slog.Error("Fail to read header", slogutil.Error(err))
 		return
 	}
 
 	dstAddr := xnet.JoinHostPort(hdr.Addr.String(), hdr.Port)
-
+	l := slog.With(slog.String(constants.LogFieldRequestID, hdr.RequestID))
 	switch hdr.Protocol {
 	case xnet.ProtocolTCP:
 		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolTCP, dstAddr)
 		if err != nil {
-			klog.ErrorS(err, "Fail to create tcp connection", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
+			l.Error("Fail to create tcp connection", slog.String(constants.LogFieldDestAddr, dstAddr), slogutil.Error(err))
 			_ = writeACK(c, xnet.Acknowledgement{
 				Code: ackCodeFromErr(err),
 			})
@@ -89,16 +95,16 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 			Code: xnet.AckCodeOK,
 		})
 		if err != nil {
-			klog.ErrorS(err, "Fail to write ack", constants.LogFieldRequestID, hdr.RequestID)
+			l.Error("Fail to write ack", slogutil.Error(err))
 			return
 		}
-		klog.InfoS("Start proxy tcp request", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
+		l.Info("Start proxy tcp request", slog.String(constants.LogFieldDestAddr, dstAddr))
 		xnet.ProxyTCP(hdr.RequestID, c, upstreamConn.(*net.TCPConn))
 
 	case xnet.ProtocolUDP:
 		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolUDP, dstAddr)
 		if err != nil {
-			klog.ErrorS(err, "Fail to create udp connection", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
+			l.Error("Fail to create udp connection", slog.String(constants.LogFieldDestAddr, dstAddr), slogutil.Error(err))
 			_ = writeACK(c, xnet.Acknowledgement{
 				Code: ackCodeFromErr(err),
 			})
@@ -108,20 +114,26 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 			Code: xnet.AckCodeOK,
 		})
 		if err != nil {
-			klog.ErrorS(err, "Fail to write ack", constants.LogFieldRequestID, hdr.RequestID)
+			l.Error("Fail to write ack", slogutil.Error(err))
 			return
 		}
-		klog.InfoS("Start proxy udp request", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr)
+		l.Info("Start proxy udp request", slog.String(constants.LogFieldDestAddr, dstAddr))
 		udpConn := &xnet.UDPConn{UDPConn: upstreamConn.(*net.UDPConn)}
 		xnet.ProxyUDP(hdr.RequestID, c, udpConn)
 
 	default:
-		klog.InfoS("Unknown protocol", constants.LogFieldRequestID, hdr.RequestID, constants.LogFieldDestAddr, dstAddr, constants.LogFieldProtocol, hdr.Protocol)
+		l.Error("Unknown protocol", slog.String(constants.LogFieldDestAddr, dstAddr), slog.Any(constants.LogFieldProtocol, hdr.Protocol))
+		err = writeACK(c, xnet.Acknowledgement{
+			Code: xnet.AckCodeUnknownProtocol,
+		})
+		if err != nil {
+			l.Error("Fail to write ack", slogutil.Error(err))
+			return
+		}
 	}
 }
 
 func main() {
-	klog.InitFlags(nil)
 	o := options{}
 	c := cobra.Command{
 		Use: constants.ServerName,
@@ -130,7 +142,8 @@ func main() {
 		},
 		SilenceUsage: true,
 	}
-	c.Flags().AddGoFlagSet(flag.CommandLine)
-	c.Flags().DurationVar(&o.connectTimeout, "connect-timeout", time.Second*10, "Timeout for connecting to upstream")
+	flags := c.Flags()
+	flags.DurationVar(&o.connectTimeout, "connect-timeout", time.Second*10, "Timeout for connecting to upstream")
+	flags.IntP("v", "v", 0, "bogus flag to keep backward compatibility. This flag will be removed in the future.")
 	_ = c.Execute()
 }

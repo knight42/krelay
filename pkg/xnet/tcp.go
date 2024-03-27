@@ -2,9 +2,8 @@ package xnet
 
 import (
 	"io"
+	"log/slog"
 	"net"
-
-	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
 )
@@ -30,7 +29,8 @@ func tcpBroker(dst, src net.Conn, srcClosed chan struct{}) {
 
 // ProxyTCP is excerpt from https://stackoverflow.com/a/27445109/4725840
 func ProxyTCP(reqID string, downConn, upConn *net.TCPConn) {
-	defer klog.V(4).InfoS("ProxyTCP exit", constants.LogFieldRequestID, reqID)
+	l := slog.With(slog.String(constants.LogFieldRequestID, reqID))
+	defer l.Debug("ProxyTCP exit")
 
 	// channels to wait on the close event for each connection
 	upClosed := make(chan struct{})
@@ -46,7 +46,7 @@ func ProxyTCP(reqID string, downConn, upConn *net.TCPConn) {
 	var waitFor chan struct{}
 	select {
 	case <-downClosed:
-		klog.V(4).InfoS("Client close connection", constants.LogFieldRequestID, reqID)
+		l.Debug("Client close connection")
 		// the client closed first and any more packets from the server aren't
 		// useful, so we can optionally SetLinger(0) here to recycle the port
 		// faster.
@@ -54,7 +54,7 @@ func ProxyTCP(reqID string, downConn, upConn *net.TCPConn) {
 		_ = upConn.CloseRead()
 		waitFor = upClosed
 	case <-upClosed:
-		klog.V(4).InfoS("Server close connection", constants.LogFieldRequestID, reqID)
+		l.Debug("Server close connection")
 		_ = downConn.CloseRead()
 		waitFor = downClosed
 	}

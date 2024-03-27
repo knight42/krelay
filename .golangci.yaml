@@ -3,9 +3,8 @@ run:
   modules-download-mode: readonly
 linters:
   enable:
-  - exhaustive
-  - exportloopref
   - dupl
+  - exportloopref
   - gochecknoinits
   - goconst
   - gocritic
@@ -22,10 +21,6 @@ linters:
   - usestdlibvars
   - whitespace
 linters-settings:
-  exhaustive:
-    # presence of "default" case in switch statements satisfies exhaustiveness,
-    # even if all enum members are not listed
-    default-signifies-exhaustive: true
 issues:
   exclude-rules:
   - path: _test.go

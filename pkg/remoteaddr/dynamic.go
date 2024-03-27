@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -15,8 +16,8 @@ import (
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	watchtools "k8s.io/client-go/tools/watch"
-	"k8s.io/klog/v2"
 
+	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
@@ -40,39 +41,42 @@ func (d *dynamicAddr) Get() (xnet.Addr, error) {
 func (d *dynamicAddr) watchForUpdates(w watch.Interface) {
 	defer w.Stop()
 	for ev := range w.ResultChan() {
-		klog.V(5).InfoS("Receive event", "event", ev)
+		slog.Debug("Receive event", slog.Any("event", ev))
 
 		switch ev.Type {
 		case watch.Bookmark, watch.Error:
-			klog.V(4).InfoS("Ignore specific events", "type", ev.Type)
+			slog.Debug("Ignore specific events", slog.String("type", string(ev.Type)))
 			continue
 		default: // make linter happy
 		}
 
 		pod, ok := ev.Object.(*corev1.Pod)
 		if !ok || pod.Name != d.podName {
-			klog.V(4).InfoS("Ignore event from unrelated pod", "pod", pod.Name, "current", d.podName)
+			slog.Debug("Ignore event from unrelated pod",
+				slog.String("pod", pod.Name),
+				slog.String("current", d.podName),
+			)
 			continue
 		}
 
 		if ev.Type == watch.Modified && pod.DeletionTimestamp == nil && pod.Status.Phase == corev1.PodRunning {
-			klog.V(4).InfoS("Ignore event since the pod is still running", "pod", pod.Name)
+			slog.Debug("Ignore event since the pod is still running", slog.String("pod", pod.Name))
 			continue
 		}
 
-		klog.V(4).InfoS("Try to update remote address", "current", d.podName)
+		slog.Debug("Try to update remote address", slog.String("current", d.podName))
 		err := wait.PollUntilContextTimeout(context.TODO(), time.Second*2, time.Minute, true, func(ctx context.Context) (bool, error) {
 			_, err := d.updatePodIP(ctx)
 			if err == nil {
 				return true, nil
 			}
-			klog.Warningf("Fail to update remote address: %v. Will retry.", err)
+			slog.Warn("Fail to update remote address. Will retry.", slogutil.Error(err))
 			return false, nil
 		})
 		if err != nil {
-			klog.Errorf("Fail to update remote address within timeout")
+			slog.Error("Fail to update remote address within timeout")
 		} else {
-			klog.V(4).InfoS("Successfully update remote address", "current", d.podName)
+			slog.Debug("Successfully update remote address", slog.String("current", d.podName))
 		}
 	}
 }

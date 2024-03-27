@@ -3,10 +3,9 @@ package xnet
 import (
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"net"
 	"time"
-
-	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/alarm"
 	"github.com/knight42/krelay/pkg/constants"
@@ -45,7 +44,8 @@ func ReadUDPFromStream(r io.Reader, buf []byte, timeout time.Duration) (n int, e
 var udpPool = newBufferPool(constants.UDPBufferSize)
 
 func ProxyUDP(reqID string, downConn *net.TCPConn, upConn net.Conn) {
-	defer klog.V(4).InfoS("ProxyUDP exit", constants.LogFieldRequestID, reqID)
+	l := slog.With(slog.String(constants.LogFieldRequestID, reqID))
+	defer l.Debug("ProxyUDP exit")
 
 	downClosed := make(chan struct{})
 	upClosed := make(chan struct{})
@@ -102,11 +102,11 @@ func ProxyUDP(reqID string, downConn *net.TCPConn, upConn net.Conn) {
 	var waitFor chan struct{}
 	select {
 	case <-downClosed:
-		klog.V(4).InfoS("Client close connection", constants.LogFieldRequestID, reqID)
+		l.Debug("Client close connection")
 		_ = upConn.Close()
 		waitFor = upClosed
 	case <-upClosed:
-		klog.V(4).InfoS("Server close connection", constants.LogFieldRequestID, reqID)
+		l.Debug("Server close connection")
 		_ = downConn.CloseRead()
 		waitFor = downClosed
 	}
