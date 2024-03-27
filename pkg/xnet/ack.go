@@ -26,8 +26,11 @@ func (c AckCode) Error() string {
 		return "Resolve timeout"
 	case AckCodeConnectTimeout:
 		return "Connect timeout"
+	case AckCodeUnknownProtocol:
+		return "Unknown protocol"
+	default:
+		return "Unknown code"
 	}
-	return "Unknown Code"
 }
 
 type Acknowledgement struct {

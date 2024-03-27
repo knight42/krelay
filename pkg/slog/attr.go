@@ -6,7 +6,7 @@ import (
 
 // Error returns an Attr for an error.
 func Error(err error) slog.Attr {
-	return slog.Any("error", err)
+	return slog.String("error", err.Error())
 }
 
 // Uint16 converts an uint16 to an uint64 and returns

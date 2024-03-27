@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -23,10 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/remoteaddr"
+	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
@@ -103,7 +104,7 @@ loop:
 				running = true
 				break loop
 			}
-			klog.V(4).InfoS("Pod is not running. Will retry.", "pod", podObj.Name)
+			slog.Debug("Pod is not running. Will retry.", slog.String("pod", podObj.Name))
 		}
 	}
 	if !running {
@@ -114,7 +115,8 @@ loop:
 }
 
 func removeServerPod(cs kubernetes.Interface, namespace, podName string, timeout time.Duration) {
-	klog.InfoS("Removing krelay-server pod", "pod", podName)
+	l := slog.With(slog.String("pod", podName))
+	l.Info("Removing krelay-server pod")
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -122,7 +124,7 @@ func removeServerPod(cs kubernetes.Interface, namespace, podName string, timeout
 		GracePeriodSeconds: toPtr[int64](0),
 	})
 	if err != nil && !k8serr.IsNotFound(err) {
-		klog.ErrorS(err, "Fail to remove krelay-server pod", "pod", podName)
+		l.Error("Fail to remove krelay-server pod", slogutil.Error(err))
 	}
 }
 

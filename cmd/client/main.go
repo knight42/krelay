@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,7 +22,6 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport/spdy"
-	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/ports"
@@ -153,7 +152,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	klog.InfoS("Creating krelay-server", "namespace", o.serverNamespace)
+	slog.Info("Creating krelay-server", slog.String("namespace", o.serverNamespace))
 	svrPodName, err := createServerPod(ctx, cs, o.serverImage, o.serverNamespace)
 	if err != nil {
 		return fmt.Errorf("create krelay-server pod: %w", err)
@@ -164,7 +163,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("ensure krelay-server is running: %w", err)
 	}
-	klog.InfoS("krelay-server is running", "pod", svrPodName, "namespace", o.serverNamespace)
+	slog.Info("krelay-server is running", slog.String("pod", svrPodName), slog.String("namespace", o.serverNamespace))
 
 	transport, upgrader, err := spdy.RoundTripperFor(restCfg)
 	if err != nil {
@@ -191,7 +190,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	for _, pf := range portForwarders {
 		err := pf.listen(o.address)
 		if err != nil {
-			klog.ErrorS(err, "Fail to listen on port", "port", pf.ports.LocalPort)
+			slog.Error("Fail to listen on port", slog.Any("port", pf.ports.LocalPort), slog.Any("error", err))
 		} else {
 			succeeded = true
 		}
@@ -204,7 +203,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 
 	select {
 	case <-streamConn.CloseChan():
-		klog.InfoS("Lost connection to krelay-server pod")
+		slog.Info("Lost connection to krelay-server pod")
 	case <-ctx.Done():
 	}
 
@@ -212,7 +211,6 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 }
 
 func main() {
-	klog.InitFlags(nil)
 	cf := genericclioptions.NewConfigFlags(true)
 	o := Options{
 		getter: cf,
@@ -244,33 +242,17 @@ service, ip and hostname rather than only pods.`,
 		SilenceUsage: true,
 	}
 	flags := c.Flags()
-	flags.AddGoFlagSet(flag.CommandLine)
-	cf.AddFlags(flags)
+	flags.SortFlags = false
+	flags.StringVar(cf.KubeConfig, "kubeconfig", *cf.KubeConfig, "Path to the kubeconfig file to use for CLI requests.")
+	flags.StringVarP(cf.Namespace, "namespace", "n", *cf.Namespace, "If present, the namespace scope for this CLI request")
+	flags.StringVar(cf.Context, "context", *cf.Context, "The name of the kubeconfig context to use")
+	flags.StringVar(cf.ClusterName, "cluster", *cf.ClusterName, "The name of the kubeconfig cluster to use")
+
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
+	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line.")
 	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.2", "The krelay-server image to use.")
 	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
-	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line.")
-
-	// I do not want these flags to show up in --help.
-	hiddenFlags := []string{
-		"add_dir_header",
-		"log_flush_frequency",
-		"alsologtostderr",
-		"log_backtrace_at",
-		"log_dir",
-		"log_file",
-		"log_file_max_size",
-		"one_output",
-		"logtostderr",
-		"skip_headers",
-		"skip_log_headers",
-		"stderrthreshold",
-		"vmodule",
-	}
-	for _, flagName := range hiddenFlags {
-		_ = flags.MarkHidden(flagName)
-	}
 
 	_ = c.Execute()
 }

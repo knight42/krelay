@@ -11,15 +11,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/knight42/krelay/pkg/constants"
+	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
 type options struct {
 	connectTimeout time.Duration
-}
-
-func slogErrAttr(err error) slog.Attr {
-	return slog.Any("error", err)
 }
 
 func (o *options) run(ctx context.Context) error {
@@ -40,7 +37,7 @@ func (o *options) run(ctx context.Context) error {
 			if errors.As(err, &tmpErr) && tmpErr.Temporary() {
 				continue
 			}
-			slog.Error("Fail to accept connection", slogErrAttr(err))
+			slog.Error("Fail to accept connection", slogutil.Error(err))
 			return err
 		}
 		go handleConn(ctx, c.(*net.TCPConn), &dialer)
@@ -78,7 +75,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 	hdr := xnet.Header{}
 	err := hdr.FromReader(c)
 	if err != nil {
-		slog.Error("Fail to read header", slogErrAttr(err))
+		slog.Error("Fail to read header", slogutil.Error(err))
 		return
 	}
 
@@ -88,7 +85,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 	case xnet.ProtocolTCP:
 		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolTCP, dstAddr)
 		if err != nil {
-			l.Error("Fail to create tcp connection", slog.String(constants.LogFieldDestAddr, dstAddr), slogErrAttr(err))
+			l.Error("Fail to create tcp connection", slog.String(constants.LogFieldDestAddr, dstAddr), slogutil.Error(err))
 			_ = writeACK(c, xnet.Acknowledgement{
 				Code: ackCodeFromErr(err),
 			})
@@ -98,7 +95,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 			Code: xnet.AckCodeOK,
 		})
 		if err != nil {
-			l.Error("Fail to write ack", slogErrAttr(err))
+			l.Error("Fail to write ack", slogutil.Error(err))
 			return
 		}
 		l.Info("Start proxy tcp request", slog.String(constants.LogFieldDestAddr, dstAddr))
@@ -107,7 +104,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 	case xnet.ProtocolUDP:
 		upstreamConn, err := dialer.DialContext(ctx, constants.ProtocolUDP, dstAddr)
 		if err != nil {
-			l.Error("Fail to create udp connection", slog.String(constants.LogFieldDestAddr, dstAddr), slogErrAttr(err))
+			l.Error("Fail to create udp connection", slog.String(constants.LogFieldDestAddr, dstAddr), slogutil.Error(err))
 			_ = writeACK(c, xnet.Acknowledgement{
 				Code: ackCodeFromErr(err),
 			})
@@ -117,7 +114,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 			Code: xnet.AckCodeOK,
 		})
 		if err != nil {
-			l.Error("Fail to write ack", slogErrAttr(err))
+			l.Error("Fail to write ack", slogutil.Error(err))
 			return
 		}
 		l.Info("Start proxy udp request", slog.String(constants.LogFieldDestAddr, dstAddr))
@@ -130,7 +127,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 			Code: xnet.AckCodeUnknownProtocol,
 		})
 		if err != nil {
-			l.Error("Fail to write ack", slogErrAttr(err))
+			l.Error("Fail to write ack", slogutil.Error(err))
 			return
 		}
 	}
