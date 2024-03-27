@@ -13,6 +13,7 @@ const (
 	AckCodeNoSuchHost
 	AckCodeResolveTimeout
 	AckCodeConnectTimeout
+	AckCodeUnknownProtocol
 )
 
 func (c AckCode) Error() string {
