@@ -14,3 +14,16 @@ func Error(err error) slog.Attr {
 func Uint16(key string, v uint16) slog.Attr {
 	return slog.Uint64(key, uint64(v))
 }
+
+func MapVerbosityToLogLevel(v int) slog.Level {
+	switch {
+	case v >= 4:
+		return slog.LevelDebug
+	case v >= 3:
+		return slog.LevelInfo
+	case v >= 2:
+		return slog.LevelWarn
+	default:
+		return slog.LevelError
+	}
+}

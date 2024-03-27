@@ -26,6 +26,7 @@ import (
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/ports"
 	"github.com/knight42/krelay/pkg/remoteaddr"
+	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
@@ -40,6 +41,8 @@ type Options struct {
 	address string
 	// targetsFile is the file containing the list of targets.
 	targetsFile string
+
+	verbosity int
 }
 
 // setKubernetesDefaults sets default values on the provided client config for accessing the Kubernetes API.
@@ -235,6 +238,10 @@ service, ip and hostname rather than only pods.`,
 				})
 			}
 
+			h := slog.NewTextHandler(cmd.ErrOrStderr(), &slog.HandlerOptions{
+				Level: slogutil.MapVerbosityToLogLevel(o.verbosity),
+			})
+			slog.SetDefault(slog.New(h))
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer cancel()
 			return o.Run(ctx, args)
@@ -253,6 +260,7 @@ service, ip and hostname rather than only pods.`,
 	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line.")
 	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.2", "The krelay-server image to use.")
 	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
+	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")
 
 	_ = c.Execute()
 }
