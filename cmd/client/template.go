@@ -34,6 +34,9 @@ func example() string {
 
   # Create the agent in the kube-public namespace, and forward local port 5000 to "1.2.3.4:5000"
   {{.Name}} --server.namespace kube-public ip/1.2.3.4 5000
+
+  # Forward traffic to multiple targets
+  echo 'ip/1.2.3.4 5000\nsvc/my-service 8080:80\n-n kube-system deploy/coredns 5353:53@udp' | {{.Name}} -f -
 `
 	tpl, err := template.New("example").Parse(text)
 	if err != nil {
