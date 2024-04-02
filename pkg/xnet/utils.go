@@ -1,10 +1,10 @@
 package xnet
 
 import (
+	"errors"
 	"io"
 	"net"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -39,7 +39,7 @@ func JoinHostPort(host string, port uint16) string {
 }
 
 func IsClosedConnectionError(err error) bool {
-	return strings.Contains(err.Error(), "use of closed network connection")
+	return errors.Is(err, net.ErrClosed)
 }
 
 func newBufferPool(size int) sync.Pool {
