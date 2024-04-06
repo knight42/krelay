@@ -46,11 +46,20 @@ func createServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, names
 			},
 		},
 		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken: toPtr(false),
+			EnableServiceLinks:           toPtr(false),
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: toPtr(true),
+			},
 			Containers: []corev1.Container{
 				{
 					Name:            constants.ServerName,
 					Image:           svrImg,
 					ImagePullPolicy: corev1.PullAlways,
+					SecurityContext: &corev1.SecurityContext{
+						ReadOnlyRootFilesystem:   toPtr(true),
+						AllowPrivilegeEscalation: toPtr(false),
+					},
 				},
 			},
 			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
