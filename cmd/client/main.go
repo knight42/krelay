@@ -238,10 +238,7 @@ service, ip and hostname rather than only pods.`,
 				})
 			}
 
-			h := slog.NewTextHandler(cmd.ErrOrStderr(), &slog.HandlerOptions{
-				Level: slogutil.MapVerbosityToLogLevel(o.verbosity),
-			})
-			slog.SetDefault(slog.New(h))
+			slog.SetLogLoggerLevel(slogutil.MapVerbosityToLogLevel(o.verbosity))
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer cancel()
 			return o.Run(ctx, args)
