@@ -62,10 +62,11 @@ $ kubectl relay -f targets.txt
 
 ## Installation
 
-| Distribution                           | Command / Link                                                 |
-|----------------------------------------|----------------------------------------------------------------|
-| [Krew](https://krew.sigs.k8s.io/)      | `kubectl krew install relay`                                   |
-| Pre-built binaries for macOS, Linux    | [GitHub releases](https://github.com/knight42/krelay/releases) |
+| Distribution                          | Command / Link                                                 |
+|---------------------------------------|----------------------------------------------------------------|
+| [Krew](https://krew.sigs.k8s.io/)     | `kubectl krew install relay`                                   |
+| [Homebrew](https://brew.sh/)          | `brew install knight42/tap/krelay`                             |
+| Pre-built binaries for macOS, Linux   | [GitHub releases](https://github.com/knight42/krelay/releases) |
 
 > [!NOTE]
 > If you only have limited access to the cluster, please make sure the permissions specified in [rbac.yaml](./manifests/rbac.yaml)
