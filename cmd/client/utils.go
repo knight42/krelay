@@ -44,6 +44,9 @@ func createServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, names
 				"app.kubernetes.io/name": constants.ServerName,
 				"app":                    constants.ServerName,
 			},
+			Annotations: map[string]string{
+				"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
+			},
 		},
 		Spec: corev1.PodSpec{
 			AutomountServiceAccountToken: toPtr(false),
