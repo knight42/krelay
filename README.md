@@ -57,7 +57,7 @@ svc/nginx 8080:80
 host/redis.cn-north-1.cache.amazonaws.com 6379
 EOF
 
-$ kubectl relay -f targets.txt
+$ kubectl-relay -f targets.txt
 ```
 
 ## Installation
@@ -86,29 +86,29 @@ git clone https://github.com/knight42/krelay
 cd krelay
 make krelay
 cp krelay "$GOPATH/bin/kubectl-relay"
-kubectl relay -V
+kubectl-relay -V
 ```
 
 ## Usage
 
 ```bash
 # Listen on port 8080 locally, forwarding data to the port named "http" in the service
-kubectl relay service/my-service 8080:http
+kubectl-relay service/my-service 8080:http
 
 # Listen on a random port locally, forwarding udp packets to port 53 in a pod selected by the deployment
-kubectl relay -n kube-system deploy/kube-dns :53@udp
+kubectl-relay -n kube-system deploy/kube-dns :53@udp
 
 # Listen on port 5353 on all addresses, forwarding data to port 53 in the pod
-kubectl relay --address 0.0.0.0 pod/my-pod 5353:53
+kubectl-relay --address 0.0.0.0 pod/my-pod 5353:53
 
 # Listen on port 6379 locally, forwarding data to "redis.cn-north-1.cache.amazonaws.com:6379" from the cluster
-kubectl relay host/redis.cn-north-1.cache.amazonaws.com 6379
+kubectl-relay host/redis.cn-north-1.cache.amazonaws.com 6379
 
 # Listen on port 5000 and 6000 locally, forwarding data to "1.2.3.4:5000" and "1.2.3.4:6000" from the cluster
-kubectl relay ip/1.2.3.4 5000@tcp 6000@udp
+kubectl-relay ip/1.2.3.4 5000@tcp 6000@udp
 
 # Create the agent in the kube-public namespace, and forward local port 5000 to "1.2.3.4:5000"
-kubectl relay --server.namespace kube-public ip/1.2.3.4 5000
+kubectl-relay --server.namespace kube-public ip/1.2.3.4 5000
 ```
 
 ## Flags
