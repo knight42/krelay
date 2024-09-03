@@ -60,6 +60,20 @@ EOF
 $ kubectl relay -f targets.txt
 ```
 
+### Customize the forwarding server
+
+You can provide a merge patch in JSON or YAML format to customize the forwarding server. For instance:
+```bash
+$ cat patch.yaml
+metadata:
+  generateName: foo-
+spec:
+  nodeSelector:
+    your-key: your-value
+
+$ kubectl --patch-file patch.yaml svc/nginx 8080:80
+```
+
 ## Installation
 
 | Distribution                          | Command / Link                                                 |
@@ -107,18 +121,20 @@ kubectl relay host/redis.cn-north-1.cache.amazonaws.com 6379
 # Listen on port 5000 and 6000 locally, forwarding data to "1.2.3.4:5000" and "1.2.3.4:6000" from the cluster
 kubectl relay ip/1.2.3.4 5000@tcp 6000@udp
 
-# Create the agent in the kube-public namespace, and forward local port 5000 to "1.2.3.4:5000"
-kubectl relay --server.namespace kube-public ip/1.2.3.4 5000
+# Customized the server, and forward local port 5000 to "1.2.3.4:5000"
+kubectl relay --patch '{"metadata":{"namespace":"kube-public"},"spec":{"nodeSelector":{"k": "v"}}}' ip/1.2.3.4 5000
+
 ```
 
 ## Flags
 
-| flag                 | default                                 | description                                                 |
-|----------------------|-----------------------------------------|-------------------------------------------------------------|
-| `--address`          | `127.0.0.1`                             | Address to listen on. Only accepts IP addresses as a value. |
-| `-f`/`--file`        | N/A                                     | Forward traffic to the targets specified in the given file. |
-| `--server.image`     | `ghcr.io/knight42/krelay-server:v0.0.1` | The krelay-server image to use.                             |
-| `--server.namespace` | `default`                               | The namespace in which krelay-server is located.            |
+| flag             | default                                 | description                                                             |
+|------------------|-----------------------------------------|-------------------------------------------------------------------------|
+| `--address`      | `127.0.0.1`                             | Address to listen on. Only accepts IP addresses as a value.             |
+| `-f`/`--file`    | N/A                                     | Forward traffic to the targets specified in the given file.             |
+| `--server.image` | `ghcr.io/knight42/krelay-server:v0.0.1` | The krelay-server image to use.                                         |
+| `-p`/`--patch`   | N/A                                     | The merge patch to be applied to the krelay-server pod.                 |
+| `--patch-file`   | N/A                                     | A file containing a merge patch to be applied to the krelay-server pod. |
 
 ## How It Works
 

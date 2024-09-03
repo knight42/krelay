@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -35,12 +36,18 @@ type Options struct {
 
 	// serverImage is the image to use for the krelay-server.
 	serverImage string
+	// Deprecated
 	// serverNamespace is the namespace in which krelay-server is located.
 	serverNamespace string
 	// address is the address to listen on.
 	address string
 	// targetsFile is the file containing the list of targets.
 	targetsFile string
+
+	// patch is the literal MergePatch
+	patch string
+	// patchFile is the file containing the MergePatch
+	patchFile string
 
 	verbosity int
 }
@@ -60,6 +67,71 @@ func setKubernetesDefaults(config *rest.Config) {
 		// on the client.
 		config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 	}
+}
+
+func (o *Options) newServerPod() (*corev1.Pod, error) {
+	origPod := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    o.serverNamespace,
+			GenerateName: constants.ServerName + "-",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": constants.ServerName,
+				"app":                    constants.ServerName,
+			},
+			Annotations: map[string]string{
+				"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken: toPtr(false),
+			EnableServiceLinks:           toPtr(false),
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: toPtr(true),
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            constants.ServerName,
+					Image:           o.serverImage,
+					ImagePullPolicy: corev1.PullAlways,
+					SecurityContext: &corev1.SecurityContext{
+						ReadOnlyRootFilesystem:   toPtr(true),
+						AllowPrivilegeEscalation: toPtr(false),
+					},
+				},
+			},
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       "kubernetes.io/hostname",
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": constants.ServerName,
+						},
+					},
+				},
+			},
+		},
+	}
+	if len(o.patch) == 0 && len(o.patchFile) == 0 {
+		return &origPod, nil
+	}
+
+	patchBytes := []byte(o.patch)
+	if len(o.patchFile) > 0 {
+		var err error
+		patchBytes, err = os.ReadFile(o.patchFile)
+		if err != nil {
+			return nil, fmt.Errorf("read file: %w", err)
+		}
+	}
+
+	patched, err := patchPod(patchBytes, origPod)
+	if err != nil {
+		return nil, fmt.Errorf("patch server pod: %w", err)
+	}
+
+	return patched, nil
 }
 
 func (o *Options) Run(ctx context.Context, args []string) error {
@@ -155,18 +227,24 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	slog.Info("Creating krelay-server", slog.String("namespace", o.serverNamespace))
-	svrPodName, err := createServerPod(ctx, cs, o.serverImage, o.serverNamespace)
+	svrPod, err := o.newServerPod()
+	if err != nil {
+		return err
+	}
+
+	slog.Info("Creating krelay-server", slog.String("namespace", svrPod.Namespace))
+	createdPod, err := cs.CoreV1().Pods(svrPod.Namespace).Create(ctx, svrPod, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("create krelay-server pod: %w", err)
 	}
-	defer removeServerPod(cs, o.serverNamespace, svrPodName, time.Minute)
+	svrPodName := createdPod.Name
+	defer removeServerPod(cs, svrPod.Namespace, svrPodName, time.Minute)
 
-	err = ensureServerPodIsRunning(ctx, cs, o.serverNamespace, svrPodName)
+	err = ensureServerPodIsRunning(ctx, cs, svrPod.Namespace, svrPodName)
 	if err != nil {
 		return fmt.Errorf("ensure krelay-server is running: %w", err)
 	}
-	slog.Info("krelay-server is running", slog.String("pod", svrPodName), slog.String("namespace", o.serverNamespace))
+	slog.Info("krelay-server is running", slog.String("pod", svrPodName), slog.String("namespace", svrPod.Namespace))
 
 	transport, upgrader, err := spdy.RoundTripperFor(restCfg)
 	if err != nil {
@@ -180,7 +258,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 
 	req := restClient.Post().
 		Resource("pods").
-		Namespace(o.serverNamespace).Name(svrPodName).
+		Namespace(svrPod.Namespace).Name(svrPodName).
 		SubResource("portforward")
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
 	streamConn, _, err := dialer.Dial(constants.PortForwardProtocolV1Name)
@@ -255,8 +333,13 @@ service, ip and hostname rather than only pods.`,
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
 	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line.")
-	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.4", "The krelay-server image to use.")
-	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
 	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")
+	flags.StringVarP(&o.patch, "patch", "p", "", "The merge patch to be applied to the krelay-server pod.")
+	flags.StringVar(&o.patchFile, "patch-file", "", "A file containing a merge patch to be applied to the krelay-server pod.")
+	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.4", "The krelay-server image to use.")
+
+	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
+	_ = flags.MarkDeprecated("server.namespace", "please use --patch/--patch-file instead.")
+	_ = flags.MarkHidden("server.namespace")
 	_ = c.Execute()
 }

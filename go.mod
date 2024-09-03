@@ -3,6 +3,7 @@ module github.com/knight42/krelay
 go 1.22.0
 
 require (
+	github.com/evanphx/json-patch/v5 v5.9.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.9.0
 	k8s.io/api v0.31.0
