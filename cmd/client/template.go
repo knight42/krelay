@@ -32,8 +32,8 @@ func example() string {
   # Listen on port 5000 and 6000 locally, forwarding data to "1.2.3.4:5000" and "1.2.3.4:6000" from the cluster
   {{.Name}} ip/1.2.3.4 5000@tcp 6000@udp
 
-  # Create the agent in the kube-public namespace, and forward local port 5000 to "1.2.3.4:5000"
-  {{.Name}} --server.namespace kube-public ip/1.2.3.4 5000
+  # Customize the server, and forward local port 5000 to "1.2.3.4:5000"
+  {{.Name}} --patch '{"metadata":{"namespace":"kube-public"},"spec":{"nodeSelector":{"k": "v"}}}' ip/1.2.3.4 5000
 
   # Forward traffic to multiple targets
   echo 'ip/1.2.3.4 5000\nsvc/my-service 8080:80\n-n kube-system deploy/coredns 5353:53@udp' | {{.Name}} -f -

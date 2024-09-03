@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +23,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 
@@ -35,54 +38,29 @@ func toPtr[T any](v T) *T {
 	return &v
 }
 
-func createServerPod(ctx context.Context, cs kubernetes.Interface, svrImg, namespace string) (string, error) {
-	pod, err := cs.CoreV1().Pods(namespace).Create(ctx, &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    namespace,
-			GenerateName: constants.ServerName + "-",
-			Labels: map[string]string{
-				"app.kubernetes.io/name": constants.ServerName,
-				"app":                    constants.ServerName,
-			},
-			Annotations: map[string]string{
-				"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
-			},
-		},
-		Spec: corev1.PodSpec{
-			AutomountServiceAccountToken: toPtr(false),
-			EnableServiceLinks:           toPtr(false),
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: toPtr(true),
-			},
-			Containers: []corev1.Container{
-				{
-					Name:            constants.ServerName,
-					Image:           svrImg,
-					ImagePullPolicy: corev1.PullAlways,
-					SecurityContext: &corev1.SecurityContext{
-						ReadOnlyRootFilesystem:   toPtr(true),
-						AllowPrivilegeEscalation: toPtr(false),
-					},
-				},
-			},
-			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
-				{
-					MaxSkew:           1,
-					TopologyKey:       "kubernetes.io/hostname",
-					WhenUnsatisfiable: corev1.ScheduleAnyway,
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"app": constants.ServerName,
-						},
-					},
-				},
-			},
-		},
-	}, metav1.CreateOptions{})
+func patchPod(patchBytes []byte, origPod corev1.Pod) (*corev1.Pod, error) {
+	patchJSONBytes, err := yaml.ToJSON(patchBytes)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("convert patch to json: %w", err)
 	}
-	return pod.Name, nil
+
+	origBytes, err := json.Marshal(origPod)
+	if err != nil {
+		return nil, fmt.Errorf("marshal pod: %w", err)
+	}
+
+	after, err := jsonpatch.MergePatch(origBytes, patchJSONBytes)
+	if err != nil {
+		return nil, fmt.Errorf("apply merge patch: %w", err)
+	}
+
+	var patchedPod corev1.Pod
+	err = json.Unmarshal(after, &patchedPod)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal pod: %w", err)
+	}
+
+	return &patchedPod, nil
 }
 
 func ensureServerPodIsRunning(ctx context.Context, cs kubernetes.Interface, namespace, podName string) error {
