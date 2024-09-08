@@ -105,6 +105,11 @@ kubectl relay -V
 
 ## Usage
 
+> [!NOTE]
+> Starting from version v0.1.2, `krelay` attempts to tunnel SPDY through websocket, in line with how `kubectl port-forward` works.
+>
+> This behavior can be disabled by setting the environment variable `KUBECTL_PORT_FORWARD_WEBSOCKETS` to `false`.
+
 ```bash
 # Listen on port 8080 locally, forwarding data to the port named "http" in the service
 kubectl relay service/my-service 8080:http
