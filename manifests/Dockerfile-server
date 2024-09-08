@@ -1,9 +1,11 @@
 FROM golang:1.22.5 AS builder
 WORKDIR /workspace
-ADD . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags '-w -s' -o krelay-server ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=target=. \
+  CGO_ENABLED=0 go build -trimpath -ldflags '-w -s' -o /tmp/server ./cmd/server
 
 FROM gcr.io/distroless/static:nonroot
 LABEL maintainer="Jian Zeng <anonymousknight96@gmail.com>"
-COPY --from=builder /workspace/krelay-server /server
+COPY --from=builder /tmp/server /server
 ENTRYPOINT ["/server"]
