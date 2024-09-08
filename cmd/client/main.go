@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -22,7 +21,6 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/transport/spdy"
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/ports"
@@ -246,11 +244,6 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 	slog.Info("krelay-server is running", slog.String("pod", svrPodName), slog.String("namespace", svrPod.Namespace))
 
-	transport, upgrader, err := spdy.RoundTripperFor(restCfg)
-	if err != nil {
-		return err
-	}
-
 	restClient, err := rest.RESTClientFor(restCfg)
 	if err != nil {
 		return err
@@ -260,7 +253,12 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		Resource("pods").
 		Namespace(svrPod.Namespace).Name(svrPodName).
 		SubResource("portforward")
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
+
+	dialer, err := createDialer(restCfg, req.URL())
+	if err != nil {
+		return fmt.Errorf("create dialer: %w", err)
+	}
+
 	streamConn, _, err := dialer.Dial(constants.PortForwardProtocolV1Name)
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
