@@ -9,10 +9,11 @@ import (
 )
 
 func getProgramName() string {
-	if strings.HasPrefix(filepath.Base(os.Args[0]), "kubectl-") {
+	name := filepath.Base(os.Args[0])
+	if strings.HasPrefix(name, "kubectl-") {
 		return "kubectl relay"
 	}
-	return "krelay"
+	return name
 }
 
 func example() string {
