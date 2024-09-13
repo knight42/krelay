@@ -305,11 +305,11 @@ func main() {
 	c := cobra.Command{
 		Use:     fmt.Sprintf(`%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT[@PROTOCOL] [...[LOCAL_PORT_N:]REMOTE_PORT_N[@PROTOCOL_N]]`, getProgramName()),
 		Example: example(),
-		Long: fmt.Sprintf(`This command is similar to "kubectl port-forward", but it also supports UDP and could forward data to a
+		Long: `This command is similar to "kubectl port-forward", but it also supports UDP and could forward data to a
 service, ip and hostname rather than only pods.
 
 Starting from version v0.1.2, it attempts to tunnel SPDY through websocket, in line with how "kubectl port-forward" works.
-This behavior can be disabled by setting the environment variable "KUBECTL_PORT_FORWARD_WEBSOCKETS" to "false".`),
+This behavior can be disabled by setting the environment variable "KUBECTL_PORT_FORWARD_WEBSOCKETS" to "false".`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printVersion {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
