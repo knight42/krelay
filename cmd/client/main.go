@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/ports"
@@ -296,11 +299,17 @@ func main() {
 	}
 	printVersion := false
 
+	fs := flag.NewFlagSet("klog", flag.ExitOnError)
+	klog.InitFlags(fs)
+
 	c := cobra.Command{
 		Use:     fmt.Sprintf(`%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT[@PROTOCOL] [...[LOCAL_PORT_N:]REMOTE_PORT_N[@PROTOCOL_N]]`, getProgramName()),
 		Example: example(),
-		Long: `This command is similar to "kubectl port-forward", but it also supports UDP and could forward data to a
-service, ip and hostname rather than only pods.`,
+		Long: fmt.Sprintf(`This command is similar to "kubectl port-forward", but it also supports UDP and could forward data to a
+service, ip and hostname rather than only pods.
+
+Starting from version v0.1.2, it attempts to tunnel SPDY through websocket, in line with how "kubectl port-forward" works.
+This behavior can be disabled by setting the environment variable "KUBECTL_PORT_FORWARD_WEBSOCKETS" to "false".`),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printVersion {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
@@ -314,6 +323,7 @@ service, ip and hostname rather than only pods.`,
 				})
 			}
 
+			_ = fs.Set("v", strconv.Itoa(o.verbosity))
 			slog.SetLogLoggerLevel(slogutil.MapVerbosityToLogLevel(o.verbosity))
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer cancel()
