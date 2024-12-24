@@ -5,11 +5,11 @@ go 1.22.0
 require (
 	github.com/evanphx/json-patch/v5 v5.9.0
 	github.com/spf13/cobra v1.8.1
-	github.com/stretchr/testify v1.9.0
-	k8s.io/api v0.31.0
-	k8s.io/apimachinery v0.31.0
-	k8s.io/cli-runtime v0.31.0
-	k8s.io/client-go v0.31.0
+	github.com/stretchr/testify v1.10.0
+	k8s.io/api v0.31.3
+	k8s.io/apimachinery v0.31.3
+	k8s.io/cli-runtime v0.31.3
+	k8s.io/client-go v0.31.3
 	k8s.io/klog/v2 v2.130.1
 )
 
