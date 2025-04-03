@@ -2,16 +2,16 @@ module github.com/knight42/krelay
 
 go 1.23.0
 
-toolchain go1.23.4
+toolchain go1.24.1
 
 require (
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
-	k8s.io/api v0.32.2
-	k8s.io/apimachinery v0.32.2
-	k8s.io/cli-runtime v0.32.2
-	k8s.io/client-go v0.32.2
+	k8s.io/api v0.32.3
+	k8s.io/apimachinery v0.32.3
+	k8s.io/cli-runtime v0.32.3
+	k8s.io/client-go v0.32.3
 	k8s.io/klog/v2 v2.130.1
 )
 
