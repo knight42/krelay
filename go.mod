@@ -1,7 +1,8 @@
 module github.com/knight42/krelay
 
-go 1.23.0
-toolchain go1.24.1
+go 1.24.0
+
+toolchain go1.24.2
 
 require (
 	github.com/evanphx/json-patch/v5 v5.9.11
