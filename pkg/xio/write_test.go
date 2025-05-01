@@ -12,10 +12,7 @@ type fakeWriter struct {
 }
 
 func (f *fakeWriter) Write(p []byte) (n int, err error) {
-	size := len(p)
-	if size > f.batchSize {
-		size = f.batchSize
-	}
+	size := min(len(p), f.batchSize)
 	f.buf = append(f.buf, p[:size]...)
 	return size, nil
 }
