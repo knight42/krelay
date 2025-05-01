@@ -112,11 +112,11 @@ func (d *dynamicAddr) init() error {
 		return err
 	}
 
-	w, err := watchtools.NewRetryWatcher(rv, &cache.ListWatch{
-		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-			return d.podCli.Watch(context.Background(), options)
-		}},
-	)
+	w, err := watchtools.NewRetryWatcherWithContext(context.Background(), rv, &cache.ListWatch{
+		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+			return d.podCli.Watch(ctx, options)
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("watch pods: %w", err)
 	}
