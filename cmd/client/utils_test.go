@@ -161,7 +161,7 @@ metadata:
 		t.Run(name, func(t *testing.T) {
 			got, err := patchPod([]byte(tc.patch), tc.origPod)
 			require.NoError(t, err)
-			require.EqualValues(t, tc.expected, *got)
+			require.Equal(t, tc.expected, *got)
 		})
 	}
 }
