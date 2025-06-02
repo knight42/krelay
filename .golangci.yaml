@@ -1,31 +1,48 @@
+version: "2"
 run:
-  timeout: 5m
   modules-download-mode: readonly
 linters:
   enable:
-  - dupl
-  - copyloopvar
-  - gochecknoinits
-  - goconst
-  - gocritic
-  - gofmt
-  - goimports
-  - misspell
-  - nolintlint
-  - prealloc
-  - revive
-  - staticcheck
-  - testifylint
-  - unconvert
-  - unparam
-  - usestdlibvars
-  - whitespace
-linters-settings:
-  govet:
-    enable:
-      - nilness
-issues:
-  exclude-rules:
-  - path: _test.go
-    linters:
-    - errcheck
+    - copyloopvar
+    - dupl
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - misspell
+    - nolintlint
+    - prealloc
+    - revive
+    - testifylint
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - whitespace
+  settings:
+    govet:
+      enable:
+        - nilness
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+        path: _test.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
