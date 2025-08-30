@@ -228,6 +228,19 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		}
 	}
 
+	succeeded := false
+	for _, pf := range portForwarders {
+		err := pf.listen(o.address)
+		if err != nil {
+			slog.Error("Fail to listen on port", slog.Any("port", pf.ports.LocalPort), slog.Any("error", err))
+		} else {
+			succeeded = true
+		}
+	}
+	if !succeeded {
+		return fmt.Errorf("unable to listen on any of the requested ports")
+	}
+
 	svrPod, err := o.newServerPod()
 	if err != nil {
 		return err
@@ -268,19 +281,8 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	}
 	defer streamConn.Close()
 
-	succeeded := false
 	for _, pf := range portForwarders {
-		err := pf.listen(o.address)
-		if err != nil {
-			slog.Error("Fail to listen on port", slog.Any("port", pf.ports.LocalPort), slog.Any("error", err))
-		} else {
-			succeeded = true
-		}
 		go pf.run(streamConn)
-	}
-
-	if !succeeded {
-		return fmt.Errorf("unable to listen on any of the requested ports")
 	}
 
 	select {
