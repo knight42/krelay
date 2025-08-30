@@ -16,8 +16,6 @@ updates:
           - "major"
           - "minor"
           - "patch"
-    reviewers:
-      - "knight42"
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
@@ -27,5 +25,3 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    reviewers:
-      - "knight42"
