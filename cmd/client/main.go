@@ -37,9 +37,6 @@ type Options struct {
 
 	// serverImage is the image to use for the krelay-server.
 	serverImage string
-	// Deprecated
-	// serverNamespace is the namespace in which krelay-server is located.
-	serverNamespace string
 	// address is the address to listen on.
 	address string
 	// targetsFile is the file containing the list of targets.
@@ -73,7 +70,7 @@ func setKubernetesDefaults(config *rest.Config) {
 func (o *Options) newServerPod() (*corev1.Pod, error) {
 	origPod := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    o.serverNamespace,
+			Namespace:    metav1.NamespaceDefault,
 			GenerateName: constants.ServerName + "-",
 			Labels: map[string]string{
 				"app.kubernetes.io/name": constants.ServerName,
@@ -348,8 +345,5 @@ This behavior can be disabled by setting the environment variable "KUBECTL_PORT_
 	flags.StringVar(&o.patchFile, "patch-file", "", "A file containing a merge patch to be applied to the krelay-server pod.")
 	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.4", "The krelay-server image to use.")
 
-	flags.StringVar(&o.serverNamespace, "server.namespace", metav1.NamespaceDefault, "The namespace in which krelay-server is located.")
-	_ = flags.MarkDeprecated("server.namespace", "please use --patch/--patch-file instead.")
-	_ = flags.MarkHidden("server.namespace")
 	_ = c.Execute()
 }
