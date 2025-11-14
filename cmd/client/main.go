@@ -167,6 +167,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 				resource:  args[0],
 				ports:     args[1:],
 				namespace: ns,
+				lisAddr:   o.address,
 			},
 		}
 	}
@@ -221,15 +222,19 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 			return err
 		}
 		for _, pp := range forwardPorts {
-			portForwarders = append(portForwarders, newPortForwarder(addrGetter, pp))
+			portForwarders = append(portForwarders, &portForwarder{
+				addrGetter: addrGetter,
+				ports:      pp,
+				listenAddr: targetSpec.lisAddr,
+			})
 		}
 	}
 
 	succeeded := false
 	for _, pf := range portForwarders {
-		err := pf.listen(o.address)
+		err := pf.listen()
 		if err != nil {
-			slog.Error("Fail to listen on port", slog.Any("port", pf.ports.LocalPort), slog.Any("error", err))
+			slog.Error("Fail to bind address", slog.Any("error", err))
 		} else {
 			succeeded = true
 		}
@@ -338,7 +343,7 @@ This behavior can be disabled by setting the environment variable "KUBECTL_PORT_
 	flags.StringVar(cf.ClusterName, "cluster", *cf.ClusterName, "The name of the kubeconfig cluster to use")
 
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
-	flags.StringVar(&o.address, "address", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
+	flags.StringVarP(&o.address, "address", "l", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
 	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line.")
 	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")
 	flags.StringVarP(&o.patch, "patch", "p", "", "The merge patch to be applied to the krelay-server pod.")

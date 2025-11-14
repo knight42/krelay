@@ -37,7 +37,11 @@ func example() string {
   {{.Name}} --patch '{"metadata":{"namespace":"kube-public"},"spec":{"nodeSelector":{"k": "v"}}}' ip/1.2.3.4 5000
 
   # Forward traffic to multiple targets
-  echo 'ip/1.2.3.4 5000\nsvc/my-service 8080:80\n-n kube-system deploy/coredns 5353:53@udp' | {{.Name}} -f -
+  cat <<EOF | {{.Name}} -f -
+-l 192.168.1.100 ip/1.2.3.4 5000
+svc/my-service 8080:80
+-n kube-system deploy/coredns 5353:53@udp
+EOF
 `
 	tpl, err := template.New("example").Parse(text)
 	if err != nil {
