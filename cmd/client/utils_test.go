@@ -24,6 +24,7 @@ func TestParseTargetsFile(t *testing.T) {
 				{
 					resource: "bar",
 					ports:    []string{"53@udp", "53@tcp"},
+					lisAddr:  "127.0.0.1",
 				},
 			},
 		},
@@ -40,14 +41,17 @@ pod/foo 8000 8001
 				{
 					resource: "ip/1.2.3.4",
 					ports:    []string{"8080"},
+					lisAddr:  "127.0.0.1",
 				},
 				{
 					resource: "host/google.com",
 					ports:    []string{"443@tcp"},
+					lisAddr:  "127.0.0.1",
 				},
 				{
 					resource: "pod/foo",
 					ports:    []string{"8000", "8001"},
+					lisAddr:  "127.0.0.1",
 				},
 			},
 		},
@@ -64,21 +68,43 @@ svc/q 8000
 					resource:  "svc/q",
 					ports:     []string{"8000"},
 					namespace: "bar1",
+					lisAddr:   "127.0.0.1",
 				},
 				{
 					resource:  "host/q.com",
 					ports:     []string{"8000", "9000:9001"},
 					namespace: "foo",
+					lisAddr:   "127.0.0.1",
 				},
 				{
 					resource:  "svc/q",
 					ports:     []string{"8000"},
 					namespace: "bar2",
+					lisAddr:   "127.0.0.1",
 				},
 				{
 					resource:  "svc/q",
 					ports:     []string{"8000"},
 					namespace: "foo",
+					lisAddr:   "127.0.0.1",
+				},
+			},
+		},
+		"with listen address": {
+			input: `
+-l localhost svc/q 8000
+--address 1.1.1.1 host/q.com 8000
+`,
+			expect: []target{
+				{
+					resource: "svc/q",
+					ports:    []string{"8000"},
+					lisAddr:  "localhost",
+				},
+				{
+					resource: "host/q.com",
+					ports:    []string{"8000"},
+					lisAddr:  "1.1.1.1",
 				},
 			},
 		},
@@ -90,7 +116,7 @@ svc/q 8000
 		},
 		"unknown flag": {
 			input:     `-invalid-flag foo 8080`,
-			expectErr: "flag provided but not defined: -invalid-flag",
+			expectErr: "unknown shorthand flag",
 		},
 		"missing value for -n flag": {
 			input:     `-n foo 8080`,

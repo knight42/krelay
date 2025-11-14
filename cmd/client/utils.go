@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
+	"github.com/spf13/pflag"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
@@ -248,13 +248,21 @@ type target struct {
 	resource  string
 	ports     []string
 	namespace string
+	lisAddr   string
 }
 
 func parseTargetsFile(r io.Reader, defaultNamespace string) ([]target, error) {
-	fs := flag.NewFlagSet("targets", flag.ContinueOnError)
+	fs := pflag.NewFlagSet("targets", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	var ns string
-	fs.StringVar(&ns, "n", defaultNamespace, "namespace")
+
+	var (
+		ns         string
+		listenAddr string
+	)
+	const defaultListenAddr = "127.0.0.1"
+
+	fs.StringVarP(&ns, "namespace", "n", defaultNamespace, "namespace")
+	fs.StringVarP(&listenAddr, "address", "l", defaultListenAddr, "listen address")
 
 	s := bufio.NewScanner(r)
 	var ret []target
@@ -270,6 +278,7 @@ func parseTargetsFile(r io.Reader, defaultNamespace string) ([]target, error) {
 		fields := strings.Fields(line)
 		// We need to reset the state before parsing the next line
 		ns = defaultNamespace
+		listenAddr = defaultListenAddr
 		err := fs.Parse(fields)
 		if err != nil {
 			return nil, fmt.Errorf("line: %d: %w", lineNo, err)
@@ -283,6 +292,7 @@ func parseTargetsFile(r io.Reader, defaultNamespace string) ([]target, error) {
 			resource:  remain[0],
 			ports:     remain[1:],
 			namespace: ns,
+			lisAddr:   listenAddr,
 		})
 	}
 	return ret, nil

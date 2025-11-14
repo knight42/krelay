@@ -18,20 +18,14 @@ import (
 type portForwarder struct {
 	addrGetter remoteaddr.Getter
 	ports      ports.PortPair
+	listenAddr string
 
 	tcpListener net.Listener
 	udpListener net.PacketConn
 }
 
-func newPortForwarder(addrGetter remoteaddr.Getter, pp ports.PortPair) *portForwarder {
-	return &portForwarder{
-		addrGetter: addrGetter,
-		ports:      pp,
-	}
-}
-
-func (p *portForwarder) listen(localIP string) error {
-	bindAddr := net.JoinHostPort(localIP, strconv.Itoa(int(p.ports.LocalPort)))
+func (p *portForwarder) listen() error {
+	bindAddr := net.JoinHostPort(p.listenAddr, strconv.Itoa(int(p.ports.LocalPort)))
 	switch p.ports.Protocol {
 	case constants.ProtocolTCP:
 		l, err := net.Listen(constants.ProtocolTCP, bindAddr)
