@@ -48,13 +48,14 @@ $ cat > targets.txt <<EOF
 # Each line in the file represents a target, the syntax is the same as the command line.
 # Empty line or line starts with '#' or '//' will be ignored.
 
-# namespace of the object can be specified by the -n flag
+# The namespace of the object can be specified by the -n flag
 -n kube-system svc/kube-dns 10053:53@udp
 
 # The default namespace is used if no namespace is specified
 svc/nginx 8080:80
 
-host/redis.cn-north-1.cache.amazonaws.com 6379
+# Use 192.168.1.101 as the local listen address instead of 127.0.0.1
+-l 192.168.1.101 host/redis.cn-north-1.cache.amazonaws.com 6379
 EOF
 
 $ kubectl relay -f targets.txt
