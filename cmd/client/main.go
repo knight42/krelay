@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -65,71 +64,6 @@ func setKubernetesDefaults(config *rest.Config) {
 		// on the client.
 		config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 	}
-}
-
-func (o *Options) newServerPod() (*corev1.Pod, error) {
-	origPod := corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    metav1.NamespaceDefault,
-			GenerateName: constants.ServerName + "-",
-			Labels: map[string]string{
-				"app.kubernetes.io/name": constants.ServerName,
-				"app":                    constants.ServerName,
-			},
-			Annotations: map[string]string{
-				"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
-			},
-		},
-		Spec: corev1.PodSpec{
-			AutomountServiceAccountToken: toPtr(false),
-			EnableServiceLinks:           toPtr(false),
-			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: toPtr(true),
-			},
-			Containers: []corev1.Container{
-				{
-					Name:            constants.ServerName,
-					Image:           o.serverImage,
-					ImagePullPolicy: corev1.PullAlways,
-					SecurityContext: &corev1.SecurityContext{
-						ReadOnlyRootFilesystem:   toPtr(true),
-						AllowPrivilegeEscalation: toPtr(false),
-					},
-				},
-			},
-			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
-				{
-					MaxSkew:           1,
-					TopologyKey:       "kubernetes.io/hostname",
-					WhenUnsatisfiable: corev1.ScheduleAnyway,
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"app": constants.ServerName,
-						},
-					},
-				},
-			},
-		},
-	}
-	if len(o.patch) == 0 && len(o.patchFile) == 0 {
-		return &origPod, nil
-	}
-
-	patchBytes := []byte(o.patch)
-	if len(o.patchFile) > 0 {
-		var err error
-		patchBytes, err = os.ReadFile(o.patchFile)
-		if err != nil {
-			return nil, fmt.Errorf("read file: %w", err)
-		}
-	}
-
-	patched, err := patchPod(patchBytes, origPod)
-	if err != nil {
-		return nil, fmt.Errorf("patch server pod: %w", err)
-	}
-
-	return patched, nil
 }
 
 func (o *Options) Run(ctx context.Context, args []string) error {
@@ -234,7 +168,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	for _, pf := range portForwarders {
 		err := pf.listen()
 		if err != nil {
-			slog.Error("Fail to bind address", slog.Any("error", err))
+			slog.Error("Fail to bind address", slogutil.Error(err))
 		} else {
 			succeeded = true
 		}
@@ -243,7 +177,8 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("unable to listen on any of the requested ports")
 	}
 
-	svrPod, err := o.newServerPod()
+	pb := newServerPodBuilder(o.serverImage).WithPatchBytes(o.patch).WithPatchFile(o.patchFile)
+	svrPod, err := pb.Build()
 	if err != nil {
 		return err
 	}
@@ -350,5 +285,8 @@ This behavior can be disabled by setting the environment variable "KUBECTL_PORT_
 	flags.StringVar(&o.patchFile, "patch-file", "", "A file containing a merge patch to be applied to the krelay-server pod.")
 	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.4", "The krelay-server image to use.")
 
+	c.AddCommand(
+		newProxyCommand(),
+	)
 	_ = c.Execute()
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,12 @@ import (
 
 func toPtr[T any](v T) *T {
 	return &v
+}
+
+func copyBuffer(b []byte) []byte {
+	c := make([]byte, len(b))
+	copy(c, b)
+	return c
 }
 
 func patchPod(patchBytes []byte, origPod corev1.Pod) (*corev1.Pod, error) {
@@ -323,4 +330,122 @@ func createDialer(restCfg *rest.Config, dstURL *url.URL) (httpstream.Dialer, err
 	}
 
 	return dialer, nil
+}
+
+type serverPodBuilder struct {
+	image string
+
+	patchFile  string
+	patchBytes []byte
+}
+
+func newServerPodBuilder(image string) *serverPodBuilder {
+	return &serverPodBuilder{
+		image: image,
+	}
+}
+
+func (b *serverPodBuilder) WithPatchBytes(p string) *serverPodBuilder {
+	b.patchBytes = []byte(p)
+	return b
+}
+
+func (b *serverPodBuilder) WithPatchFile(fp string) *serverPodBuilder {
+	b.patchFile = fp
+	return b
+}
+
+func (b *serverPodBuilder) Build() (*corev1.Pod, error) {
+	origPod := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    metav1.NamespaceDefault,
+			GenerateName: constants.ServerName + "-",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": constants.ServerName,
+				"app":                    constants.ServerName,
+			},
+			Annotations: map[string]string{
+				"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken: toPtr(false),
+			EnableServiceLinks:           toPtr(false),
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: toPtr(true),
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            constants.ServerName,
+					Image:           b.image,
+					ImagePullPolicy: corev1.PullAlways,
+					SecurityContext: &corev1.SecurityContext{
+						ReadOnlyRootFilesystem:   toPtr(true),
+						AllowPrivilegeEscalation: toPtr(false),
+					},
+				},
+			},
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       "kubernetes.io/hostname",
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": constants.ServerName,
+						},
+					},
+				},
+			},
+		},
+	}
+	if len(b.patchBytes) == 0 && len(b.patchFile) == 0 {
+		return &origPod, nil
+	}
+
+	patchBytes := b.patchBytes
+	if len(b.patchFile) > 0 {
+		var err error
+		patchBytes, err = os.ReadFile(b.patchFile)
+		if err != nil {
+			return nil, fmt.Errorf("read file: %w", err)
+		}
+	}
+
+	patched, err := patchPod(patchBytes, origPod)
+	if err != nil {
+		return nil, fmt.Errorf("patch server pod: %w", err)
+	}
+
+	return patched, nil
+}
+
+type bytesReader struct {
+	r   io.Reader
+	buf []byte
+}
+
+func (b *bytesReader) ReadBytes(n int) ([]byte, error) {
+	_, err := io.ReadFull(b.r, b.buf[:n])
+	if err != nil {
+		return nil, err
+	}
+	return b.buf[:n], nil
+}
+
+func (b *bytesReader) ReadUint16() (uint16, error) {
+	data, err := b.ReadBytes(2)
+	if err != nil {
+		return 0, err
+	}
+	return binary.BigEndian.Uint16(data), nil
+}
+
+func (b *bytesReader) ReadString() ([]byte, error) {
+	data, err := b.ReadBytes(1)
+	if err != nil {
+		return nil, err
+	}
+	length := int(data[0])
+	return b.ReadBytes(length)
 }

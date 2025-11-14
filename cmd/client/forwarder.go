@@ -78,7 +78,7 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 				l.Error("Fail to get remote address", slogutil.Error(err))
 				continue
 			}
-			go handleTCPConn(c, streamConn, remoteAddr, p.ports.RemotePort)
+			go handleTCPConn(c, streamConn, xnet.AddrPortFrom(remoteAddr, p.ports.RemotePort))
 		}
 
 	case p.udpListener != nil:
@@ -141,7 +141,7 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 					)
 					continue
 				}
-				go handleUDPConn(udpConn, cliAddr, dataCh, finish, streamConn, remoteAddr, p.ports.RemotePort)
+				go handleUDPConn(udpConn, cliAddr, dataCh, finish, streamConn, xnet.AddrPortFrom(remoteAddr, p.ports.RemotePort))
 			} else {
 				dataCh = v
 			}

@@ -13,14 +13,14 @@ import (
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
-func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAddr xnet.Addr, dstPort uint16) {
+func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAddrPort xnet.AddrPort) {
 	defer clientConn.Close()
 
 	requestID := xnet.NewRequestID()
 	l := slog.With(slog.String(constants.LogFieldRequestID, requestID))
 	defer l.Debug("handleTCPConn exit")
 	l.Info("Handling tcp connection",
-		slog.String(constants.LogFieldDestAddr, xnet.JoinHostPort(dstAddr.String(), dstPort)),
+		slog.String(constants.LogFieldDestAddr, dstAddrPort.String()),
 		slog.String(constants.LogFieldLocalAddr, clientConn.LocalAddr().String()),
 		slog.String("clientAddr", clientConn.RemoteAddr().String()),
 	)
@@ -34,8 +34,8 @@ func handleTCPConn(clientConn net.Conn, serverConn httpstream.Connection, dstAdd
 	hdr := xnet.Header{
 		RequestID: requestID,
 		Protocol:  xnet.ProtocolTCP,
-		Port:      dstPort,
-		Addr:      dstAddr,
+		Port:      dstAddrPort.Port(),
+		Addr:      dstAddrPort.Addr(),
 	}
 	_, err = xio.WriteFull(dataStream, hdr.Marshal())
 	if err != nil {
