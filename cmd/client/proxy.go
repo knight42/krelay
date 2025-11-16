@@ -7,16 +7,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/spf13/cobra"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/httpstream"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 
-	"github.com/knight42/krelay/pkg/constants"
+	"github.com/knight42/krelay/pkg/kube"
 	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xnet"
 )
@@ -143,15 +138,7 @@ func runSOCKS5Server(l net.Listener, streamConn httpstream.Connection) {
 }
 
 type proxyOptions struct {
-	getter genericclioptions.RESTClientGetter
-
-	// serverImage is the image to use for the krelay-server.
-	serverImage string
-
-	// patch is the literal MergePatch
-	patch string
-	// patchFile is the file containing the MergePatch
-	patchFile string
+	kf *kube.Flags
 
 	listenAddr string
 }
@@ -163,58 +150,14 @@ func (o *proxyOptions) Run(ctx context.Context, _ []string) error {
 	}
 	defer l.Close()
 
-	restCfg, err := o.getter.ToRESTConfig()
-	if err != nil {
-		return err
-	}
-	setKubernetesDefaults(restCfg)
-
-	cs, err := kubernetes.NewForConfig(restCfg)
+	createdPod, err := o.kf.RunServerPod(ctx)
 	if err != nil {
 		return err
 	}
 
-	pb := newServerPodBuilder(o.serverImage).WithPatchBytes(o.patch).WithPatchFile(o.patchFile)
-	svrPod, err := pb.Build()
-	if err != nil {
-		return err
-	}
+	defer createdPod.Close()
 
-	slog.Info("Creating krelay-server", slog.String("namespace", svrPod.Namespace))
-	createdPod, err := cs.CoreV1().Pods(svrPod.Namespace).Create(ctx, svrPod, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("create krelay-server pod: %w", err)
-	}
-	svrPodName := createdPod.Name
-	defer removeServerPod(cs, svrPod.Namespace, svrPodName, time.Minute)
-
-	err = ensureServerPodIsRunning(ctx, cs, svrPod.Namespace, svrPodName)
-	if err != nil {
-		return fmt.Errorf("ensure krelay-server is running: %w", err)
-	}
-	slog.Info("krelay-server is running", slog.String("pod", svrPodName), slog.String("namespace", svrPod.Namespace))
-
-	restClient, err := rest.RESTClientFor(restCfg)
-	if err != nil {
-		return err
-	}
-
-	req := restClient.Post().
-		Resource("pods").
-		Namespace(svrPod.Namespace).Name(svrPodName).
-		SubResource("portforward")
-
-	dialer, err := createDialer(restCfg, req.URL())
-	if err != nil {
-		return fmt.Errorf("create dialer: %w", err)
-	}
-
-	streamConn, _, err := dialer.Dial(constants.PortForwardProtocolV1Name)
-	if err != nil {
-		return fmt.Errorf("dial: %w", err)
-	}
-	defer streamConn.Close()
-
+	streamConn := createdPod.StreamConn()
 	go runSOCKS5Server(l, streamConn)
 
 	select {
@@ -226,10 +169,9 @@ func (o *proxyOptions) Run(ctx context.Context, _ []string) error {
 	return nil
 }
 
-func newProxyCommand() *cobra.Command {
-	cf := genericclioptions.NewConfigFlags(true)
+func newProxyCommand(kf *kube.Flags) *cobra.Command {
 	o := proxyOptions{
-		getter: cf,
+		kf: kf,
 	}
 	cmd := &cobra.Command{
 		Use:   "proxy",
@@ -240,16 +182,7 @@ func newProxyCommand() *cobra.Command {
 			return o.Run(ctx, args)
 		},
 	}
-	flags := cmd.Flags()
-	flags.SortFlags = false
-	flags.StringVar(cf.KubeConfig, "kubeconfig", *cf.KubeConfig, "Path to the kubeconfig file to use for CLI requests.")
-	flags.StringVarP(cf.Namespace, "namespace", "n", *cf.Namespace, "If present, the namespace scope for this CLI request")
-	flags.StringVar(cf.Context, "context", *cf.Context, "The name of the kubeconfig context to use")
-	flags.StringVar(cf.ClusterName, "cluster", *cf.ClusterName, "The name of the kubeconfig cluster to use")
-
-	flags.StringVarP(&o.patch, "patch", "p", "", "The merge patch to be applied to the krelay-server pod.")
-	flags.StringVar(&o.patchFile, "patch-file", "", "A file containing a merge patch to be applied to the krelay-server pod.")
-	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.4", "The krelay-server image to use.")
+	flags := cmd.LocalFlags()
 
 	flags.StringVarP(&o.listenAddr, "listen", "l", "127.0.0.1:1080", "SOCKS5 proxy listen address")
 	return cmd
