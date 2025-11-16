@@ -12,7 +12,7 @@ import (
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
-func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []byte, finish chan<- string, serverConn httpstream.Connection, dstAddr xnet.Addr, dstPort uint16) {
+func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []byte, finish chan<- string, serverConn httpstream.Connection, dstAddrPort xnet.AddrPort) {
 	requestID := xnet.NewRequestID()
 	l := slog.With(slog.String(constants.LogFieldRequestID, requestID))
 	defer l.Debug("handleUDPConn exit")
@@ -20,7 +20,7 @@ func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []by
 		finish <- cliAddr.String()
 	}()
 	l.Info("Handling udp connection",
-		slog.String(constants.LogFieldDestAddr, xnet.JoinHostPort(dstAddr.String(), dstPort)),
+		slog.String(constants.LogFieldDestAddr, dstAddrPort.String()),
 		slog.String(constants.LogFieldLocalAddr, clientConn.LocalAddr().String()),
 		slog.String("clientAddr", cliAddr.String()),
 	)
@@ -34,8 +34,8 @@ func handleUDPConn(clientConn net.PacketConn, cliAddr net.Addr, dataCh chan []by
 	hdr := xnet.Header{
 		RequestID: requestID,
 		Protocol:  xnet.ProtocolUDP,
-		Port:      dstPort,
-		Addr:      dstAddr,
+		Port:      dstAddrPort.Port(),
+		Addr:      dstAddrPort.Addr(),
 	}
 	_, err = xio.WriteFull(dataStream, hdr.Marshal())
 	if err != nil {

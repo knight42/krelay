@@ -3,12 +3,35 @@ package xnet
 import (
 	"fmt"
 	"net"
+	"strconv"
 )
 
 const (
 	AddrTypeIP byte = iota
 	AddrTypeHost
 )
+
+type AddrPort struct {
+	addr Addr
+	port uint16
+}
+
+func (a AddrPort) Port() uint16 {
+	return a.port
+}
+
+func (a AddrPort) Addr() Addr {
+	return a.addr
+}
+
+func (a AddrPort) String() string {
+	host := a.addr.String()
+	return net.JoinHostPort(host, strconv.Itoa(int(a.port)))
+}
+
+func AddrPortFrom(a Addr, port uint16) AddrPort {
+	return AddrPort{a, port}
+}
 
 type Addr struct {
 	typ  byte
