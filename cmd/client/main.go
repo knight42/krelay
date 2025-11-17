@@ -177,7 +177,8 @@ func main() {
 	c := cobra.Command{
 		Use:     fmt.Sprintf(`%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT[@PROTOCOL] [...[LOCAL_PORT_N:]REMOTE_PORT_N[@PROTOCOL_N]]`, getProgramName()),
 		Example: example(),
-		Args:    cobra.ArbitraryArgs,
+		// IMPORTANT: without this, cobra will always try to parse args as sub commands.
+		Args: cobra.ArbitraryArgs,
 		Long: `This command is similar to "kubectl port-forward", but it also supports UDP and could forward data to a
 service, ip and hostname rather than only pods.
 
