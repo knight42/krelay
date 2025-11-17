@@ -75,6 +75,7 @@ func (p *portForwarder) run(streamConn httpstream.Connection) {
 
 			remoteAddr, err := p.addrGetter.Get()
 			if err != nil {
+				_ = c.Close()
 				l.Error("Fail to get remote address", slogutil.Error(err))
 				continue
 			}
