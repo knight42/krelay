@@ -112,11 +112,12 @@ func socks5Handshake(clientConn net.Conn) (ap xnet.AddrPort, err error) {
 func handleSOCKS5Conn(clientConn net.Conn, serverConn httpstream.Connection) {
 	ap, err := socks5Handshake(clientConn)
 	if err != nil {
+		_ = clientConn.Close()
 		slog.Error("Fail to handle SOCKS5 handshake", slogutil.Error(err))
 		return
 	}
 
-	go handleTCPConn(clientConn, serverConn, ap)
+	handleTCPConn(clientConn, serverConn, ap)
 }
 
 func runSOCKS5Server(l net.Listener, streamConn httpstream.Connection) {
