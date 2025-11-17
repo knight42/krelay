@@ -43,6 +43,10 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 
 	var targets []target
 	if len(o.targetsFile) > 0 {
+		if len(args) != 0 {
+			return errors.New("target file and TYPE/NAME with ports cannot be specified at the same time")
+		}
+
 		var fin *os.File
 		if o.targetsFile == "-" {
 			fin = os.Stdin
@@ -173,6 +177,8 @@ func main() {
 	c := cobra.Command{
 		Use:     fmt.Sprintf(`%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT[@PROTOCOL] [...[LOCAL_PORT_N:]REMOTE_PORT_N[@PROTOCOL_N]]`, getProgramName()),
 		Example: example(),
+		// IMPORTANT: without this, cobra will always try to parse args as sub commands.
+		Args: cobra.ArbitraryArgs,
 		Long: `This command is similar to "kubectl port-forward", but it also supports UDP and could forward data to a
 service, ip and hostname rather than only pods.
 
