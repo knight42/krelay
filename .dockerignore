@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+bin/
+
+# Certificates (generated locally)
+*.crt
+*.key
+*.csr
+*.srl
+extfile.cnf
+
+# Documentation
+*.md
+!README.md
+
+# Spec files
+.specstory/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+*_test.go
+testdata/
+
+# Kubernetes manifests
+deploy/
+
+# Local config
+*.local
+.env

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: krelay-system
+  labels:
+    app.kubernetes.io/name: krelay
+    app.kubernetes.io/component: system

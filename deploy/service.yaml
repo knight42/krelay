@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: krelay-server
+  namespace: krelay-system
+  labels:
+    app.kubernetes.io/name: krelay
+    app.kubernetes.io/component: server
+spec:
+  selector:
+    app.kubernetes.io/name: krelay
+    app.kubernetes.io/component: server
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP

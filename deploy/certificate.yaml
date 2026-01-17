@@ -1,0 +1,78 @@
+# This file provides two options for TLS certificates:
+# 1. Using cert-manager (recommended for production)
+# 2. Manual secret creation (for development/testing)
+
+# Option 1: cert-manager Certificate (uncomment if using cert-manager)
+# ---
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: krelay-server-tls
+#   namespace: krelay-system
+# spec:
+#   secretName: krelay-server-tls
+#   duration: 8760h # 1 year
+#   renewBefore: 720h # 30 days
+#   subject:
+#     organizations:
+#       - krelay
+#   isCA: false
+#   privateKey:
+#     algorithm: RSA
+#     size: 2048
+#   usages:
+#     - server auth
+#   dnsNames:
+#     - krelay-server
+#     - krelay-server.krelay-system
+#     - krelay-server.krelay-system.svc
+#     - krelay-server.krelay-system.svc.cluster.local
+#   issuerRef:
+#     name: your-issuer  # Replace with your issuer
+#     kind: ClusterIssuer
+
+# Option 2: Manual secret creation
+# Generate self-signed certificates with:
+#
+#   # Generate CA
+#   openssl genrsa -out ca.key 2048
+#   openssl req -x509 -new -nodes -key ca.key -sha256 -days 365 -out ca.crt \
+#     -subj "/CN=krelay-ca"
+#
+#   # Generate server certificate
+#   openssl genrsa -out tls.key 2048
+#   openssl req -new -key tls.key -out server.csr \
+#     -subj "/CN=krelay-server.krelay-system.svc" \
+#     -config <(cat <<EOF
+# [req]
+# req_extensions = v3_req
+# distinguished_name = req_distinguished_name
+# [req_distinguished_name]
+# [v3_req]
+# basicConstraints = CA:FALSE
+# keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+# subjectAltName = @alt_names
+# [alt_names]
+# DNS.1 = krelay-server
+# DNS.2 = krelay-server.krelay-system
+# DNS.3 = krelay-server.krelay-system.svc
+# DNS.4 = krelay-server.krelay-system.svc.cluster.local
+# EOF
+# )
+#   openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+#     -out tls.crt -days 365 -sha256 \
+#     -extfile <(cat <<EOF
+# subjectAltName = DNS:krelay-server,DNS:krelay-server.krelay-system,DNS:krelay-server.krelay-system.svc,DNS:krelay-server.krelay-system.svc.cluster.local
+# EOF
+# )
+#
+#   # Create secret
+#   kubectl create secret tls krelay-server-tls \
+#     --cert=tls.crt \
+#     --key=tls.key \
+#     -n krelay-system
+#
+#   # Update APIService with CA bundle (optional, or use insecureSkipTLSVerify)
+#   kubectl patch apiservice v1alpha1.relay.krelay.io \
+#     --type=json \
+#     -p="[{\"op\": \"replace\", \"path\": \"/spec/caBundle\", \"value\": \"$(base64 -w0 ca.crt)\"}]"

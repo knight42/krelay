@@ -1,0 +1,28 @@
+# Build artifacts
+bin/
+/krelay
+/krelay-server
+
+# Certificates
+*.crt
+*.key
+*.csr
+*.srl
+extfile.cnf
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test
+coverage.out
+
+# Local config
+.env
+*.local

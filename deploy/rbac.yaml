@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: krelay-server
+  namespace: krelay-system
+  labels:
+    app.kubernetes.io/name: krelay
+    app.kubernetes.io/component: server
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: krelay-server
+  labels:
+    app.kubernetes.io/name: krelay
+    app.kubernetes.io/component: server
+rules:
+  # Read pods for target resolution
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Read services for target resolution
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+  # Read deployments for target resolution
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+  # Read replicasets for deployment pod discovery
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: krelay-server
+  labels:
+    app.kubernetes.io/name: krelay
+    app.kubernetes.io/component: server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: krelay-server
+subjects:
+  - kind: ServiceAccount
+    name: krelay-server
+    namespace: krelay-system
+---
+# Role binding for auth delegation (required for aggregated API servers)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: krelay-server-auth-reader
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: krelay
+    app.kubernetes.io/component: server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: krelay-server
+    namespace: krelay-system
+---
+# ClusterRoleBinding for auth delegation
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: krelay-server:system:auth-delegator
+  labels:
+    app.kubernetes.io/name: krelay
+    app.kubernetes.io/component: server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: krelay-server
+    namespace: krelay-system
