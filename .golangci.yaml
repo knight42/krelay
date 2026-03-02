@@ -30,6 +30,10 @@ linters:
       - std-error-handling
     rules:
       - linters:
+          - revive
+        path: pkg/slog/
+        text: "var-naming"
+      - linters:
           - errcheck
         path: _test.go
     paths:
