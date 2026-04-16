@@ -9,6 +9,7 @@ linters:
     - goconst
     - gocritic
     - misspell
+    - modernize
     - nolintlint
     - prealloc
     - revive

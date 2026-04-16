@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/httpstream"
@@ -17,6 +18,11 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/knight42/krelay/pkg/constants"
+)
+
+const (
+	ttlSecondsAfterFinished int32 = 10
+	jobBackoffLimit         int32 = 0
 )
 
 type Flags struct {
@@ -82,24 +88,25 @@ func (f *Flags) ToResourceBuilder() *resource.Builder {
 	return resource.NewBuilder(f.cf)
 }
 
-func (f *Flags) buildServerPod() (*corev1.Pod, error) {
+func (f *Flags) buildServerJob() (*batchv1.Job, error) {
+	podLabels := map[string]string{
+		"app.kubernetes.io/name": constants.ServerName,
+		"app":                    constants.ServerName,
+	}
 	origPod := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    metav1.NamespaceDefault,
-			GenerateName: constants.ServerName + "-",
-			Labels: map[string]string{
-				"app.kubernetes.io/name": constants.ServerName,
-				"app":                    constants.ServerName,
-			},
+			Namespace: metav1.NamespaceDefault,
+			Labels:    podLabels,
 			Annotations: map[string]string{
 				"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
 			},
 		},
 		Spec: corev1.PodSpec{
-			AutomountServiceAccountToken: toPtr(false),
-			EnableServiceLinks:           toPtr(false),
+			RestartPolicy:                corev1.RestartPolicyNever,
+			AutomountServiceAccountToken: new(false),
+			EnableServiceLinks:           new(false),
 			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: toPtr(true),
+				RunAsNonRoot: new(true),
 			},
 			Containers: []corev1.Container{
 				{
@@ -107,8 +114,8 @@ func (f *Flags) buildServerPod() (*corev1.Pod, error) {
 					Image:           f.serverImage,
 					ImagePullPolicy: corev1.PullAlways,
 					SecurityContext: &corev1.SecurityContext{
-						ReadOnlyRootFilesystem:   toPtr(true),
-						AllowPrivilegeEscalation: toPtr(false),
+						ReadOnlyRootFilesystem:   new(true),
+						AllowPrivilegeEscalation: new(false),
 					},
 				},
 			},
@@ -126,30 +133,47 @@ func (f *Flags) buildServerPod() (*corev1.Pod, error) {
 			},
 		},
 	}
-	if len(f.patch) == 0 && len(f.patchFile) == 0 {
-		return &origPod, nil
-	}
 
-	var patchBytes []byte
-	if len(f.patch) > 0 {
-		patchBytes = []byte(f.patch)
-	} else if len(f.patchFile) > 0 {
-		var err error
-		patchBytes, err = os.ReadFile(f.patchFile)
-		if err != nil {
-			return nil, fmt.Errorf("read file: %w", err)
+	if len(f.patch) > 0 || len(f.patchFile) > 0 {
+		var patchBytes []byte
+		if len(f.patch) > 0 {
+			patchBytes = []byte(f.patch)
+		} else {
+			var err error
+			patchBytes, err = os.ReadFile(f.patchFile)
+			if err != nil {
+				return nil, fmt.Errorf("read file: %w", err)
+			}
 		}
+		patched, err := patchPod(patchBytes, origPod)
+		if err != nil {
+			return nil, fmt.Errorf("patch server pod: %w", err)
+		}
+		origPod = *patched
 	}
 
-	patched, err := patchPod(patchBytes, origPod)
-	if err != nil {
-		return nil, fmt.Errorf("patch server pod: %w", err)
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    origPod.Namespace,
+			GenerateName: constants.ServerName + "-",
+			Labels:       podLabels,
+		},
+		Spec: batchv1.JobSpec{
+			BackoffLimit:            new(jobBackoffLimit),
+			TTLSecondsAfterFinished: new(ttlSecondsAfterFinished),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      origPod.Labels,
+					Annotations: origPod.Annotations,
+				},
+				Spec: origPod.Spec,
+			},
+		},
 	}
-
-	return patched, nil
+	return job, nil
 }
 
-func (f *Flags) RunServerPod(ctx context.Context) (*ServerPod, error) {
+func (f *Flags) RunServerJob(ctx context.Context) (*ServerJob, error) {
 	restCfg, err := f.ToRESTConfig()
 	if err != nil {
 		return nil, err
@@ -159,23 +183,23 @@ func (f *Flags) RunServerPod(ctx context.Context) (*ServerPod, error) {
 		return nil, err
 	}
 
-	svrPod, err := f.buildServerPod()
+	svrJob, err := f.buildServerJob()
 	if err != nil {
 		return nil, err
 	}
 
-	l := slog.With(slog.String("namespace", svrPod.Namespace))
-	l.Info("Creating krelay-server")
-	createdPod, err := cs.CoreV1().Pods(svrPod.Namespace).Create(ctx, svrPod, metav1.CreateOptions{})
+	l := slog.With(slog.String("namespace", svrJob.Namespace))
+	l.Info("Creating krelay-server job")
+	createdJob, err := cs.BatchV1().Jobs(svrJob.Namespace).Create(ctx, svrJob, metav1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("create krelay-server pod: %w", err)
+		return nil, fmt.Errorf("create krelay-server job: %w", err)
 	}
 
-	err = ensureServerPodIsRunning(ctx, cs, createdPod.Namespace, createdPod.Name)
+	podName, err := waitForServerJobPod(ctx, cs, createdJob.Namespace, createdJob.Name)
 	if err != nil {
-		return nil, fmt.Errorf("ensure krelay-server is running: %w", err)
+		return nil, fmt.Errorf("wait for krelay-server pod: %w", err)
 	}
-	l.Info("krelay-server is running", slog.String("pod", createdPod.Name))
+	l.Info("krelay-server is running", slog.String("job", createdJob.Name), slog.String("pod", podName))
 
 	restClient, err := rest.RESTClientFor(restCfg)
 	if err != nil {
@@ -184,7 +208,7 @@ func (f *Flags) RunServerPod(ctx context.Context) (*ServerPod, error) {
 
 	req := restClient.Post().
 		Resource("pods").
-		Namespace(svrPod.Namespace).Name(createdPod.Name).
+		Namespace(createdJob.Namespace).Name(podName).
 		SubResource("portforward")
 
 	dialer, err := createDialer(restCfg, req.URL())
@@ -198,26 +222,25 @@ func (f *Flags) RunServerPod(ctx context.Context) (*ServerPod, error) {
 		return nil, fmt.Errorf("dial: %w", err)
 	}
 
-	ret := &ServerPod{
+	return &ServerJob{
 		cs:         cs,
-		pod:        createdPod,
+		job:        createdJob,
 		streamConn: streamConn,
-	}
-	return ret, nil
+	}, nil
 }
 
-type ServerPod struct {
+type ServerJob struct {
 	cs         kubernetes.Interface
-	pod        *corev1.Pod
+	job        *batchv1.Job
 	streamConn httpstream.Connection
 }
 
-func (p *ServerPod) StreamConn() httpstream.Connection {
+func (p *ServerJob) StreamConn() httpstream.Connection {
 	return p.streamConn
 }
 
-func (p *ServerPod) Close() error {
+func (p *ServerJob) Close() error {
 	_ = p.streamConn.Close()
-	removeServerPod(p.cs, p.pod.Namespace, p.pod.Name, time.Minute)
+	removeServerJob(p.cs, p.job.Namespace, p.job.Name, time.Minute)
 	return nil
 }
