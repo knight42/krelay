@@ -20,7 +20,7 @@ Two binaries cooperate over a single Kubernetes port-forward stream: **client** 
 - Wire protocol + proxy: `pkg/xnet`
 - Destination resolution (static / dynamic pod watch): `pkg/remoteaddr`
 - Port parsing: `pkg/ports`
-- Server-pod lifecycle and SPDY/websocket dialer: `pkg/kube`
+- Server `batch/v1.Job` lifecycle and SPDY/websocket dialer: `pkg/kube`
 
 ## Gotchas
 

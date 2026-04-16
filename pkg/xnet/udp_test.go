@@ -27,9 +27,7 @@ func TestUDPConn(t *testing.T) {
 	defer serverConn.Close()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		svrUDPConn := &UDPConn{UDPConn: serverConn.(*net.UDPConn)}
 		buf := make([]byte, 10)
 		n, cliAddr, err := svrUDPConn.ReadFrom(buf)
@@ -49,7 +47,7 @@ func TestUDPConn(t *testing.T) {
 			t.Errorf("WriteTo: %v", err)
 			return
 		}
-	}()
+	})
 
 	clientConn, err := net.Dial("udp", serverConn.LocalAddr().String())
 	r.NoError(err)

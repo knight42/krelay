@@ -144,13 +144,13 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("unable to listen on any of the requested ports")
 	}
 
-	createdPod, err := o.kf.RunServerPod(ctx)
+	createdJob, err := o.kf.RunServerJob(ctx)
 	if err != nil {
 		return err
 	}
-	defer createdPod.Close()
+	defer createdJob.Close()
 
-	streamConn := createdPod.StreamConn()
+	streamConn := createdJob.StreamConn()
 	for _, pf := range portForwarders {
 		go pf.run(streamConn)
 	}

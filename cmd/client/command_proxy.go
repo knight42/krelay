@@ -151,14 +151,14 @@ func (o *proxyOptions) Run(ctx context.Context, _ []string) error {
 	}
 	defer l.Close()
 
-	createdPod, err := o.kf.RunServerPod(ctx)
+	createdJob, err := o.kf.RunServerJob(ctx)
 	if err != nil {
 		return err
 	}
 
-	defer createdPod.Close()
+	defer createdJob.Close()
 
-	streamConn := createdPod.StreamConn()
+	streamConn := createdJob.StreamConn()
 	go runSOCKS5Server(l, streamConn)
 
 	select {
