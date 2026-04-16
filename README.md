@@ -1,5 +1,5 @@
 ![GitHub](https://img.shields.io/github/license/knight42/krelay)
-![](https://github.com/knight42/krelay/actions/workflows/test.yml/badge.svg)
+![](https://github.com/knight42/krelay/actions/workflows/pr-presubmit-checks.yml/badge.svg)
 [![Go Report Card](https://goreportcard.com/badge/github.com/knight42/krelay)](https://goreportcard.com/report/github.com/knight42/krelay)
 ![GitHub last commit](https://img.shields.io/github/last-commit/knight42/krelay)
 
@@ -23,6 +23,7 @@
 * Forwarding data to the given IP or hostname that is accessible within the kubernetes cluster
   * You could forward a local port to a port in the `Service` or a workload like `Deployment` or `StatefulSet`, and the forwarding session will not be interfered even if you perform rolling updates.
   * The hostname is resolved inside the cluster, so you don't need to change your local nameserver or modify the `/etc/hosts`.
+* Run a local SOCKS5 proxy that tunnels arbitrary TCP traffic into the cluster (`kubectl relay proxy`).
 
 ## Demo
 
@@ -130,17 +131,25 @@ kubectl relay ip/1.2.3.4 5000@tcp 6000@udp
 # Customized the server, and forward local port 5000 to "1.2.3.4:5000"
 kubectl relay --patch '{"metadata":{"namespace":"kube-public"},"spec":{"nodeSelector":{"k": "v"}}}' ip/1.2.3.4 5000
 
+# Run a SOCKS5 proxy on 127.0.0.1:1080 that tunnels TCP traffic into the cluster
+kubectl relay proxy
 ```
 
 ## Flags
 
-| flag             | default                                 | description                                                             |
-|------------------|-----------------------------------------|-------------------------------------------------------------------------|
-| `--address`      | `127.0.0.1`                             | Address to listen on. Only accepts IP addresses as a value.             |
-| `-f`/`--file`    | N/A                                     | Forward traffic to the targets specified in the given file.             |
-| `--server.image` | `ghcr.io/knight42/krelay-server:v0.0.1` | The krelay-server image to use.                                         |
-| `-p`/`--patch`   | N/A                                     | The merge patch to be applied to the krelay-server pod.                 |
-| `--patch-file`   | N/A                                     | A file containing a merge patch to be applied to the krelay-server pod. |
+Standard `kubectl` flags such as `--kubeconfig`, `-n`/`--namespace`, `--context` and `--cluster` are also accepted.
+
+| flag               | default                                 | description                                                             |
+|--------------------|-----------------------------------------|-------------------------------------------------------------------------|
+| `-l`/`--address`   | `127.0.0.1`                             | Address to listen on. Only accepts IP addresses as a value.             |
+| `-f`/`--file`      | N/A                                     | Forward traffic to the targets specified in the given file.             |
+| `-p`/`--patch`     | N/A                                     | The merge patch to be applied to the krelay-server pod.                 |
+| `--patch-file`     | N/A                                     | A file containing a merge patch to be applied to the krelay-server pod. |
+| `--server.image`   | `ghcr.io/knight42/krelay-server:v0.0.4` | The krelay-server image to use.                                         |
+| `-v`/`--v`         | `3`                                     | Log level verbosity. Higher is more verbose.                            |
+| `-V`/`--version`   | N/A                                     | Print version info and exit.                                            |
+
+The `proxy` subcommand takes `-l`/`--listen` (default `127.0.0.1:1080`) to set the SOCKS5 listen address.
 
 ## How It Works
 
@@ -171,3 +180,5 @@ The `Header` looks like this:
   * 4 bytes for IPv4 address
   * 16 bytes for IPv6 address
   * Variable bytes for hostname
+
+For a deeper dive into the client/server split, service targeting rules, and the server-pod spec, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
