@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make server-image` — build `ghcr.io/knight42/krelay-server` from `manifests/Dockerfile-server`.
 - `make test-e2e` — run e2e tests against a live k8s cluster (`go test -count=1 -tags e2e ./test/e2e/`). Set `KRELAY_SERVER_IMAGE` to override the server image.
 
-Go 1.25. Release via GoReleaser + Krew (`.goreleaser.yaml`, `.krew.yaml`).
+Go 1.26. Release via GoReleaser + Krew (`.goreleaser.yaml`, `.krew.yaml`).
 
 ## Orientation
 

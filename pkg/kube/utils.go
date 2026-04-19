@@ -70,6 +70,10 @@ func waitForServerJobPod(ctx context.Context, cs kubernetes.Interface, namespace
 
 	for ev := range w.ResultChan() {
 		switch ev.Type {
+		case watch.Deleted:
+			return "", fmt.Errorf("krelay-server pod was deleted before becoming ready")
+		case watch.Error:
+			return "", fmt.Errorf("watch error for krelay-server pod: %v", ev.Object)
 		case watch.Added, watch.Modified:
 		default:
 			continue
@@ -84,7 +88,7 @@ func waitForServerJobPod(ctx context.Context, cs kubernetes.Interface, namespace
 		}
 		slog.Debug("Pod is not running. Will retry.", slog.String("pod", podObj.Name))
 	}
-	return "", fmt.Errorf("krelay-server pod is not running")
+	return "", fmt.Errorf("timed out waiting for krelay-server pod to be running")
 }
 
 func removeServerJob(cs kubernetes.Interface, namespace, jobName string, timeout time.Duration) {

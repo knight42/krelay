@@ -50,6 +50,8 @@ func sendHeartbeats(c httpstream.Connection) {
 			}
 			if _, err := xio.WriteFull(stream, hdr.Marshal()); err != nil {
 				slog.Error("Fail to send heartbeat", slogutil.Error(err))
+				_ = stream.Close()
+				return
 			}
 			_ = stream.Close()
 		}
