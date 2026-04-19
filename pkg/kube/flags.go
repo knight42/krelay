@@ -52,7 +52,7 @@ func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 
 	flags.StringVarP(&f.patch, "patch", "p", "", "The merge patch to be applied to the krelay-server pod.")
 	flags.StringVar(&f.patchFile, "patch-file", "", "A file containing a merge patch to be applied to the krelay-server pod.")
-	flags.StringVar(&f.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.4", "The krelay-server image to use.")
+	flags.StringVar(&f.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v0.0.5", "The krelay-server image to use.")
 }
 
 func (f *Flags) GetNamespace() (string, bool, error) {
