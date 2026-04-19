@@ -225,6 +225,7 @@ func (f *Flags) RunServerJob(ctx context.Context) (*ServerJob, error) {
 	l.Info("Creating port-forward stream to krelay-server pod")
 	streamConn, _, err := dialer.Dial(constants.PortForwardProtocolV1Name)
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("dial: %w", err)
 	}
 

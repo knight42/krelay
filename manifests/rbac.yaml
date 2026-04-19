@@ -27,7 +27,7 @@ rules:
   verbs:
   - create
 
-# The following permissions is only requried if you want to forward the local port to the respective objects.
+# The following permissions are only required if you want to forward the local port to the respective objects.
 - apiGroups:
   - ""
   resources:
