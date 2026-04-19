@@ -190,6 +190,15 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 		udpConn := &xnet.UDPConn{UDPConn: upstreamConn.(*net.UDPConn)}
 		xnet.ProxyUDP(hdr.RequestID, c, udpConn)
 
+	case xnet.ProtocolKeepalive:
+		l.Info("Keepalive stream established")
+		// Block until the port-forward connection drops.
+		// This stream counts as activeConns=1, preventing the idle
+		// timer from firing as long as the tunnel is alive.
+		var buf [1]byte
+		_, _ = c.Read(buf[:])
+		l.Info("Keepalive stream closed")
+
 	default:
 		l.Error("Unknown protocol", slog.String(constants.LogFieldDestAddr, dstAddr), slog.Any(constants.LogFieldProtocol, hdr.Protocol))
 		err = writeACK(c, xnet.Acknowledgement{
