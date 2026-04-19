@@ -194,15 +194,20 @@ func (f *Flags) RunServerJob(ctx context.Context) (*ServerJob, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create krelay-server job: %w", err)
 	}
+	// Clean up the Job if anything below fails — the caller never gets a
+	// ServerJob handle to call Close() on.
+	cleanup := func() { removeServerJob(cs, createdJob.Namespace, createdJob.Name, time.Minute) }
 
 	podName, err := waitForServerJobPod(ctx, cs, createdJob.Namespace, createdJob.Name)
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("wait for krelay-server pod: %w", err)
 	}
 	l.Info("krelay-server is running", slog.String("job", createdJob.Name), slog.String("pod", podName))
 
 	restClient, err := rest.RESTClientFor(restCfg)
 	if err != nil {
+		cleanup()
 		return nil, err
 	}
 
@@ -213,6 +218,7 @@ func (f *Flags) RunServerJob(ctx context.Context) (*ServerJob, error) {
 
 	dialer, err := createDialer(restCfg, req.URL())
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("create dialer: %w", err)
 	}
 

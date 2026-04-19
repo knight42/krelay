@@ -64,7 +64,9 @@ func (t *idleTracker) monitor(ctx context.Context, lis net.Listener) {
 			idle := time.Since(time.Unix(0, t.lastActivity.Load()))
 			if idle >= t.timeout {
 				slog.Info("Idle timeout reached, shutting down", slog.Duration("idle", idle))
-				_ = lis.Close()
+				if err := lis.Close(); err != nil {
+					slog.Warn("Fail to close listener", slogutil.Error(err))
+				}
 				return
 			}
 		}

@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make lint` — `golangci-lint run`.
 - `make server-image` — build `ghcr.io/knight42/krelay-server` from `manifests/Dockerfile-server`.
 
-Go 1.25. Release via GoReleaser + Krew (`.goreleaser.yaml`, `.krew.yaml`).
+Go 1.26. Release via GoReleaser + Krew (`.goreleaser.yaml`, `.krew.yaml`).
 
 ## Orientation
 
