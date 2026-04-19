@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/remoteaddr"
+	slogutil "github.com/knight42/krelay/pkg/slog"
 	"github.com/knight42/krelay/pkg/xio"
 	"github.com/knight42/krelay/pkg/xnet"
 )
@@ -39,13 +41,16 @@ func sendHeartbeats(c httpstream.Connection) {
 			reqID := xnet.NewRequestID()
 			stream, _, err := createStream(c, reqID)
 			if err != nil {
+				slog.Error("Fail to create heartbeat stream", slogutil.Error(err))
 				return
 			}
 			hdr := xnet.Header{
 				RequestID: reqID,
 				Protocol:  xnet.ProtocolKeepalive,
 			}
-			_, _ = xio.WriteFull(stream, hdr.Marshal())
+			if _, err := xio.WriteFull(stream, hdr.Marshal()); err != nil {
+				slog.Error("Fail to send heartbeat", slogutil.Error(err))
+			}
 			_ = stream.Close()
 		}
 	}
