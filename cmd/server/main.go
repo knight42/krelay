@@ -28,10 +28,6 @@ type idleTracker struct {
 	timeout      time.Duration
 	activeConns  atomic.Int64
 	lastActivity atomic.Int64
-	// hadConn becomes true after the first connection is accepted.
-	// The idle timer only fires after this — so the server never
-	// exits before a client has connected at least once.
-	hadConn atomic.Bool
 }
 
 func newIdleTracker(timeout time.Duration) *idleTracker {
@@ -41,7 +37,6 @@ func newIdleTracker(timeout time.Duration) *idleTracker {
 }
 
 func (t *idleTracker) onConnect() {
-	t.hadConn.Store(true)
 	t.activeConns.Add(1)
 	t.lastActivity.Store(time.Now().UnixNano())
 }
@@ -63,7 +58,7 @@ func (t *idleTracker) monitor(ctx context.Context, lis net.Listener) {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			if !t.hadConn.Load() || t.activeConns.Load() > 0 {
+			if t.activeConns.Load() > 0 {
 				continue
 			}
 			idle := time.Since(time.Unix(0, t.lastActivity.Load()))
@@ -191,13 +186,7 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 		xnet.ProxyUDP(hdr.RequestID, c, udpConn)
 
 	case xnet.ProtocolKeepalive:
-		l.Info("Keepalive stream established")
-		// Block until the port-forward connection drops.
-		// This stream counts as activeConns=1, preventing the idle
-		// timer from firing as long as the tunnel is alive.
-		var buf [1]byte
-		_, _ = c.Read(buf[:])
-		l.Info("Keepalive stream closed")
+		l.Debug("Heartbeat received")
 
 	default:
 		l.Error("Unknown protocol", slog.String(constants.LogFieldDestAddr, dstAddr), slog.Any(constants.LogFieldProtocol, hdr.Protocol))

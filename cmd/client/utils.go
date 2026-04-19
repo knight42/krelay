@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 	appsv1 "k8s.io/api/apps/v1"
@@ -27,22 +28,27 @@ import (
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
-// openKeepalive opens a long-lived stream on the port-forward connection so
-// the server can detect when the tunnel drops. The stream counts as an active
-// connection on the server side, preventing its idle timer from firing as long
-// as the port-forward is alive.
-func openKeepalive(c httpstream.Connection) {
-	reqID := xnet.NewRequestID()
-	stream, _, err := createStream(c, reqID)
-	if err != nil {
-		return
+func sendHeartbeats(c httpstream.Connection) {
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-c.CloseChan():
+			return
+		case <-tick.C:
+			reqID := xnet.NewRequestID()
+			stream, _, err := createStream(c, reqID)
+			if err != nil {
+				return
+			}
+			hdr := xnet.Header{
+				RequestID: reqID,
+				Protocol:  xnet.ProtocolKeepalive,
+			}
+			_, _ = xio.WriteFull(stream, hdr.Marshal())
+			_ = stream.Close()
+		}
 	}
-	hdr := xnet.Header{
-		RequestID: reqID,
-		Protocol:  xnet.ProtocolKeepalive,
-	}
-	_, _ = xio.WriteFull(stream, hdr.Marshal())
-	// stream stays open until the connection closes — do not defer Close.
 }
 
 func copyBuffer(b []byte) []byte {

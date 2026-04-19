@@ -151,7 +151,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	defer createdJob.Close()
 
 	streamConn := createdJob.StreamConn()
-	openKeepalive(streamConn)
+	go sendHeartbeats(streamConn)
 	for _, pf := range portForwarders {
 		go pf.run(streamConn)
 	}
