@@ -159,7 +159,7 @@ func (o *proxyOptions) Run(ctx context.Context, _ []string) error {
 	defer createdJob.Close()
 
 	streamConn := createdJob.StreamConn()
-	openKeepalive(streamConn)
+	go sendHeartbeats(streamConn)
 	go runSOCKS5Server(l, streamConn)
 
 	select {
