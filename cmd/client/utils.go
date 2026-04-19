@@ -39,11 +39,12 @@ func sendHeartbeats(c httpstream.Connection) {
 			return
 		case <-tick.C:
 			reqID := xnet.NewRequestID()
-			stream, _, err := createStream(c, reqID)
+			stream, errCh, err := createStream(c, reqID)
 			if err != nil {
 				slog.Error("Fail to create heartbeat stream", slogutil.Error(err))
 				return
 			}
+			go func() { <-errCh }()
 			hdr := xnet.Header{
 				RequestID: reqID,
 				Protocol:  xnet.ProtocolKeepalive,
