@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/httpstream"
@@ -159,7 +160,7 @@ func (o *proxyOptions) Run(ctx context.Context, _ []string) error {
 	defer createdJob.Close()
 
 	streamConn := createdJob.StreamConn()
-	go sendHeartbeats(streamConn)
+	go sendHeartbeats(streamConn, 5*time.Second)
 	go runSOCKS5Server(l, streamConn)
 
 	select {

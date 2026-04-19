@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -151,7 +152,7 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 	defer createdJob.Close()
 
 	streamConn := createdJob.StreamConn()
-	go sendHeartbeats(streamConn)
+	go sendHeartbeats(streamConn, 5*time.Second)
 	for _, pf := range portForwarders {
 		go pf.run(streamConn)
 	}
