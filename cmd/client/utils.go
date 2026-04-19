@@ -30,8 +30,8 @@ import (
 	"github.com/knight42/krelay/pkg/xnet"
 )
 
-func sendHeartbeats(c httpstream.Connection) {
-	tick := time.NewTicker(5 * time.Second)
+func sendHeartbeats(c httpstream.Connection, interval time.Duration) {
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
 		select {
