@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make lint` — `golangci-lint run`.
 - `make server-image` — build `ghcr.io/knight42/krelay-server` from `manifests/Dockerfile-server`.
 
-Go 1.25. Release via GoReleaser + Krew (`.goreleaser.yaml`, `.krew.yaml`).
+Go 1.26. Release via GoReleaser + Krew (`.goreleaser.yaml`, `.krew.yaml`).
 
 ## Orientation
 
@@ -20,7 +20,7 @@ Two binaries cooperate over a single Kubernetes port-forward stream: **client** 
 - Wire protocol + proxy: `pkg/xnet`
 - Destination resolution (static / dynamic pod watch): `pkg/remoteaddr`
 - Port parsing: `pkg/ports`
-- Server-pod lifecycle and SPDY/websocket dialer: `pkg/kube`
+- Server `batch/v1.Job` lifecycle and SPDY/websocket dialer: `pkg/kube`
 
 ## Gotchas
 

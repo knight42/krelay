@@ -145,7 +145,7 @@ Standard `kubectl` flags such as `--kubeconfig`, `-n`/`--namespace`, `--context`
 | `-f`/`--file`      | N/A                                     | Forward traffic to the targets specified in the given file.             |
 | `-p`/`--patch`     | N/A                                     | The merge patch to be applied to the krelay-server pod.                 |
 | `--patch-file`     | N/A                                     | A file containing a merge patch to be applied to the krelay-server pod. |
-| `--server.image`   | `ghcr.io/knight42/krelay-server:v0.0.4` | The krelay-server image to use.                                         |
+| `--server.image`   | `ghcr.io/knight42/krelay-server:v0.0.5` | The krelay-server image to use.                                         |
 | `-v`/`--v`         | `3`                                     | Log level verbosity. Higher is more verbose.                            |
 | `-V`/`--version`   | N/A                                     | Print version info and exit.                                            |
 

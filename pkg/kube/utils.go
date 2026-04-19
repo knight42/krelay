@@ -28,10 +28,6 @@ import (
 	slogutil "github.com/knight42/krelay/pkg/slog"
 )
 
-func toPtr[T any](v T) *T {
-	return &v
-}
-
 func patchPod(patchBytes []byte, origPod corev1.Pod) (*corev1.Pod, error) {
 	patchJSONBytes, err := yaml.ToJSON(patchBytes)
 	if err != nil {
@@ -57,25 +53,28 @@ func patchPod(patchBytes []byte, origPod corev1.Pod) (*corev1.Pod, error) {
 	return &patchedPod, nil
 }
 
-func ensureServerPodIsRunning(ctx context.Context, cs kubernetes.Interface, namespace, podName string) error {
+// waitForServerJobPod blocks until a pod owned by the given Job enters the
+// Running state, then returns its name so the caller can open a port-forward
+// stream to it.
+func waitForServerJobPod(ctx context.Context, cs kubernetes.Interface, namespace, jobName string) (string, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Minute*5)
 	defer cancel()
 
 	w, err := cs.CoreV1().Pods(namespace).Watch(timeoutCtx, metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("metadata.name=%s", podName),
+		LabelSelector: fmt.Sprintf("job-name=%s", jobName),
 	})
 	if err != nil {
-		return fmt.Errorf("watch krelay-server pod: %w", err)
+		return "", fmt.Errorf("watch krelay-server pod: %w", err)
 	}
 	defer w.Stop()
 
-	running := false
-loop:
 	for ev := range w.ResultChan() {
 		switch ev.Type {
-		case watch.Deleted, watch.Error:
-			break loop
-		case watch.Modified, watch.Added:
+		case watch.Deleted:
+			return "", fmt.Errorf("krelay-server pod was deleted before becoming ready")
+		case watch.Error:
+			return "", fmt.Errorf("watch error for krelay-server pod: %v", ev.Object)
+		case watch.Added, watch.Modified:
 		default:
 			continue
 		}
@@ -84,30 +83,27 @@ loop:
 		for _, status := range podObj.Status.ContainerStatuses {
 			// there is only one container in the pod
 			if status.State.Running != nil {
-				running = true
-				break loop
+				return podObj.Name, nil
 			}
-			slog.Debug("Pod is not running. Will retry.", slog.String("pod", podObj.Name))
 		}
+		slog.Debug("Pod is not running. Will retry.", slog.String("pod", podObj.Name))
 	}
-	if !running {
-		return fmt.Errorf("krelay-server pod is not running")
-	}
-
-	return nil
+	return "", fmt.Errorf("timed out waiting for krelay-server pod to be running")
 }
 
-func removeServerPod(cs kubernetes.Interface, namespace, podName string, timeout time.Duration) {
-	l := slog.With(slog.String("pod", podName))
-	l.Info("Removing krelay-server pod")
+func removeServerJob(cs kubernetes.Interface, namespace, jobName string, timeout time.Duration) {
+	l := slog.With(slog.String("job", jobName))
+	l.Info("Removing krelay-server job")
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	err := cs.CoreV1().Pods(namespace).Delete(ctx, podName, metav1.DeleteOptions{
-		GracePeriodSeconds: toPtr[int64](0),
+	bg := metav1.DeletePropagationBackground
+	err := cs.BatchV1().Jobs(namespace).Delete(ctx, jobName, metav1.DeleteOptions{
+		GracePeriodSeconds: new(int64(0)),
+		PropagationPolicy:  &bg,
 	})
 	if err != nil && !k8serr.IsNotFound(err) {
-		l.Error("Fail to remove krelay-server pod", slogutil.Error(err))
+		l.Error("Fail to remove krelay-server job", slogutil.Error(err))
 	}
 }
 

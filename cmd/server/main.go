@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,59 @@ import (
 
 type options struct {
 	connectTimeout time.Duration
+	idleTimeout    time.Duration
+}
+
+// idleTracker closes the listener when no connections have been active for
+// idleTimeout, so the Job can transition to Complete and be garbage-collected
+// by its TTL if the client crashed without cleaning up.
+type idleTracker struct {
+	timeout      time.Duration
+	activeConns  atomic.Int64
+	lastActivity atomic.Int64
+}
+
+func newIdleTracker(timeout time.Duration) *idleTracker {
+	t := &idleTracker{timeout: timeout}
+	t.lastActivity.Store(time.Now().UnixNano())
+	return t
+}
+
+func (t *idleTracker) onConnect() {
+	t.activeConns.Add(1)
+	t.lastActivity.Store(time.Now().UnixNano())
+}
+
+func (t *idleTracker) onDisconnect() {
+	t.activeConns.Add(-1)
+	t.lastActivity.Store(time.Now().UnixNano())
+}
+
+func (t *idleTracker) monitor(ctx context.Context, lis net.Listener) {
+	if t.timeout <= 0 {
+		return
+	}
+	interval := max(t.timeout/4, time.Second)
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			if t.activeConns.Load() > 0 {
+				continue
+			}
+			idle := time.Since(time.Unix(0, t.lastActivity.Load()))
+			if idle >= t.timeout {
+				slog.Info("Idle timeout reached, shutting down", slog.Duration("idle", idle))
+				if err := lis.Close(); err != nil {
+					slog.Warn("Fail to close listener", slogutil.Error(err))
+				}
+				return
+			}
+		}
+	}
 }
 
 func (o *options) run(ctx context.Context) error {
@@ -27,10 +81,18 @@ func (o *options) run(ctx context.Context) error {
 	defer tcpListener.Close()
 
 	dialer := net.Dialer{Timeout: o.connectTimeout}
-	slog.Info("Accepting connections")
+	tracker := newIdleTracker(o.idleTimeout)
+	monitorCtx, cancelMonitor := context.WithCancel(ctx)
+	defer cancelMonitor()
+	go tracker.monitor(monitorCtx, tcpListener)
+
+	slog.Info("Accepting connections", slog.Duration("idleTimeout", o.idleTimeout))
 	for {
 		c, err := tcpListener.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			var tmpErr interface {
 				Temporary() bool
 			}
@@ -40,7 +102,11 @@ func (o *options) run(ctx context.Context) error {
 			slog.Error("Fail to accept connection", slogutil.Error(err))
 			return err
 		}
-		go handleConn(ctx, c.(*net.TCPConn), &dialer)
+		tracker.onConnect()
+		go func(c *net.TCPConn) {
+			defer tracker.onDisconnect()
+			handleConn(ctx, c, &dialer)
+		}(c.(*net.TCPConn))
 	}
 }
 
@@ -121,6 +187,9 @@ func handleConn(ctx context.Context, c *net.TCPConn, dialer *net.Dialer) {
 		udpConn := &xnet.UDPConn{UDPConn: upstreamConn.(*net.UDPConn)}
 		xnet.ProxyUDP(hdr.RequestID, c, udpConn)
 
+	case xnet.ProtocolKeepalive:
+		l.Debug("Heartbeat received")
+
 	default:
 		l.Error("Unknown protocol", slog.String(constants.LogFieldDestAddr, dstAddr), slog.Any(constants.LogFieldProtocol, hdr.Protocol))
 		err = writeACK(c, xnet.Acknowledgement{
@@ -144,6 +213,7 @@ func main() {
 	}
 	flags := c.Flags()
 	flags.DurationVar(&o.connectTimeout, "connect-timeout", time.Second*10, "Timeout for connecting to upstream")
+	flags.DurationVar(&o.idleTimeout, "idle-timeout", 5*time.Minute, "Exit when no connections have been active for this duration after the last client disconnects. 0 disables.")
 	flags.IntP("v", "v", 0, "bogus flag to keep backward compatibility. This flag will be removed in the future.")
 	_ = c.Execute()
 }

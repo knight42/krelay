@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -144,13 +145,14 @@ func (o *Options) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("unable to listen on any of the requested ports")
 	}
 
-	createdPod, err := o.kf.RunServerPod(ctx)
+	createdJob, err := o.kf.RunServerJob(ctx)
 	if err != nil {
 		return err
 	}
-	defer createdPod.Close()
+	defer createdJob.Close()
 
-	streamConn := createdPod.StreamConn()
+	streamConn := createdJob.StreamConn()
+	go sendHeartbeats(streamConn, 5*time.Second)
 	for _, pf := range portForwarders {
 		go pf.run(streamConn)
 	}
