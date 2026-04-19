@@ -28,6 +28,10 @@ type idleTracker struct {
 	timeout      time.Duration
 	activeConns  atomic.Int64
 	lastActivity atomic.Int64
+	// hadConn becomes true after the first connection is accepted.
+	// The idle timer only fires after this — so the server never
+	// exits before a client has connected at least once.
+	hadConn atomic.Bool
 }
 
 func newIdleTracker(timeout time.Duration) *idleTracker {
@@ -37,6 +41,7 @@ func newIdleTracker(timeout time.Duration) *idleTracker {
 }
 
 func (t *idleTracker) onConnect() {
+	t.hadConn.Store(true)
 	t.activeConns.Add(1)
 	t.lastActivity.Store(time.Now().UnixNano())
 }
@@ -58,7 +63,7 @@ func (t *idleTracker) monitor(ctx context.Context, lis net.Listener) {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			if t.activeConns.Load() > 0 {
+			if !t.hadConn.Load() || t.activeConns.Load() > 0 {
 				continue
 			}
 			idle := time.Since(time.Unix(0, t.lastActivity.Load()))
@@ -208,7 +213,7 @@ func main() {
 	}
 	flags := c.Flags()
 	flags.DurationVar(&o.connectTimeout, "connect-timeout", time.Second*10, "Timeout for connecting to upstream")
-	flags.DurationVar(&o.idleTimeout, "idle-timeout", time.Hour, "Exit when no connections have been active for this duration. 0 disables.")
+	flags.DurationVar(&o.idleTimeout, "idle-timeout", 5*time.Minute, "Exit when no connections have been active for this duration after the last client disconnects. 0 disables.")
 	flags.IntP("v", "v", 0, "bogus flag to keep backward compatibility. This flag will be removed in the future.")
 	_ = c.Execute()
 }

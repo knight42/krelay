@@ -16,7 +16,7 @@ Image: `ghcr.io/knight42/krelay-server` (distroless, nonroot). Listens on `const
 
 ### Idle timeout
 
-The server tracks active connections and the timestamp of the last connect/disconnect. If no connections have been active for `--idle-timeout` (default 1h), it closes the listener, `run()` returns nil, and the process exits 0 — the Job transitions to `Complete` and is garbage-collected by `ttlSecondsAfterFinished`. This is the safety net for the case where the client crashes without deleting the Job.
+The server tracks active connections and the timestamp of the last connect/disconnect. The idle timer only activates after the first connection has been accepted (so the server never exits before a client connects). Once all connections have closed, if no new connections arrive within `--idle-timeout` (default 5m), the server closes the listener, `run()` returns nil, and the process exits 0 — the Job transitions to `Complete` and is garbage-collected by `ttlSecondsAfterFinished`. This is the safety net for the case where the client crashes without deleting the Job.
 
 ## Wire protocol (`pkg/xnet/header.go`)
 
