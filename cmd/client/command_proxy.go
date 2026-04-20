@@ -183,7 +183,7 @@ func newProxyCommand(kf *kube.Flags) *cobra.Command {
 			return o.Run(ctx, args)
 		},
 	}
-	flags := cmd.LocalFlags()
+	flags := cmd.Flags()
 
 	flags.StringVarP(&o.listenAddr, "listen", "l", "127.0.0.1:1080", "SOCKS5 proxy listen address")
 	return cmd

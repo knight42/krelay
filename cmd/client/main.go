@@ -208,7 +208,7 @@ This behavior can be disabled by setting the environment variable "KUBECTL_PORT_
 	kf.AddFlags(c.PersistentFlags())
 
 	c.Flags().SortFlags = false
-	flags := c.LocalFlags()
+	flags := c.Flags()
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVarP(&o.address, "address", "l", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
 	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line.")
