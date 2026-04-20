@@ -32,3 +32,7 @@ Every new user-facing feature must include corresponding e2e tests in `test/e2e/
 - `pkg/slog/` is exempt from `revive` var-naming (`.golangci.yaml`).
 - SPDY-over-websocket is tried first; set `KUBECTL_PORT_FORWARD_WEBSOCKETS=false` to force plain SPDY.
 - Register cobra flags with `cmd.Flags()`, not `cmd.LocalFlags()`. `LocalFlags()` returns a computed set that doesn't participate in parsing.
+- When using atomics for connection tracking, update `lastActivity` **before** decrementing `activeConns` in disconnect paths — otherwise a monitor goroutine can see zero connections with a stale timestamp and shut down prematurely.
+- `createStream()` spawns a goroutine that sends on an unbuffered `errCh`. Callers that discard `errCh` must drain it (`go func() { <-errCh }()`) to avoid leaking that goroutine.
+- `RunServerJob` must clean up the Job on every error path after `Jobs().Create()` — the caller never gets a `ServerJob` handle to call `Close()` on if setup fails, and `ttlSecondsAfterFinished` only applies to finished Jobs (not stuck-Pending ones).
+- E2e tests with a local server image require `imagePullPolicy: IfNotPresent` in the pod patch; the code defaults to `Always` which fails for images not in a registry. Set `KRELAY_SERVER_IMAGE` and use `serverPodPatchWithArgs()` in test helpers.
