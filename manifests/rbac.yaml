@@ -3,20 +3,31 @@ kind: ClusterRole
 metadata:
   name: krelay
 rules:
+# create the krelay-server Job; clean it up on client exit (Job deletion
+# cascades to the pod via PropagationPolicy=Background).
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+# watch the Job's pod to learn its name and wait for it to become Running.
 - apiGroups:
   - ""
   resources:
   - pods
+  verbs:
+  - watch
+# open the port-forward stream to the krelay-server pod.
+- apiGroups:
+  - ""
+  resources:
   - pods/portforward
   verbs:
-  # create the krelay-server pod and forward local port to it
   - create
-  # watch the krelay-server pod
-  - watch
-  # clean the krelay-server pod
-  - delete
 
-# The following permissions is only requried if you want to forward the local port to the respective objects.
+# The following permissions are only required if you want to forward the local port to the respective objects.
 - apiGroups:
   - ""
   resources:

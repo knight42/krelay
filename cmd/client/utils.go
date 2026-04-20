@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 	appsv1 "k8s.io/api/apps/v1"
@@ -23,8 +25,39 @@ import (
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/remoteaddr"
+	slogutil "github.com/knight42/krelay/pkg/slog"
+	"github.com/knight42/krelay/pkg/xio"
 	"github.com/knight42/krelay/pkg/xnet"
 )
+
+func sendHeartbeats(c httpstream.Connection, interval time.Duration) {
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-c.CloseChan():
+			return
+		case <-tick.C:
+			reqID := xnet.NewRequestID()
+			stream, errCh, err := createStream(c, reqID)
+			if err != nil {
+				slog.Error("Fail to create heartbeat stream", slogutil.Error(err))
+				return
+			}
+			go func() { <-errCh }()
+			hdr := xnet.Header{
+				RequestID: reqID,
+				Protocol:  xnet.ProtocolKeepalive,
+			}
+			if _, err := xio.WriteFull(stream, hdr.Marshal()); err != nil {
+				slog.Error("Fail to send heartbeat", slogutil.Error(err))
+				_ = stream.Close()
+				return
+			}
+			_ = stream.Close()
+		}
+	}
+}
 
 func copyBuffer(b []byte) []byte {
 	c := make([]byte, len(b))
