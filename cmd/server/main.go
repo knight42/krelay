@@ -42,8 +42,11 @@ func (t *idleTracker) onConnect() {
 }
 
 func (t *idleTracker) onDisconnect() {
-	t.activeConns.Add(-1)
+	// Update lastActivity before decrementing activeConns so the monitor
+	// never sees activeConns==0 with a stale timestamp from before the
+	// connection was established.
 	t.lastActivity.Store(time.Now().UnixNano())
+	t.activeConns.Add(-1)
 }
 
 func (t *idleTracker) monitor(ctx context.Context, lis net.Listener) {
