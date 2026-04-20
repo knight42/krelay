@@ -78,8 +78,6 @@ func TestMain(m *testing.M) {
 		return
 	}
 
-	cleanupStaleNamespaces(clusterCtx)
-
 	testRunID = fmt.Sprintf("%x", time.Now().UnixNano())
 	testNS = fmt.Sprintf("krelay-e2e-%s", testRunID)
 	fmt.Printf("Creating test namespace %s...\n", testNS)
@@ -259,20 +257,6 @@ func waitForDeploymentReady(ctx context.Context, namespace, name string) error {
 		case <-ctx.Done():
 			return fmt.Errorf("timeout waiting for deployment %s/%s to be ready", namespace, name)
 		case <-time.After(2 * time.Second):
-		}
-	}
-}
-
-func cleanupStaleNamespaces(ctx context.Context) {
-	nsList, err := kubeClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return
-	}
-	cutoff := time.Now().Add(-30 * time.Minute)
-	for _, ns := range nsList.Items {
-		if strings.HasPrefix(ns.Name, "krelay-e2e-") && ns.CreationTimestamp.Time.Before(cutoff) {
-			fmt.Printf("Cleaning up stale namespace %s...\n", ns.Name)
-			_ = kubeClient.CoreV1().Namespaces().Delete(ctx, ns.Name, metav1.DeleteOptions{})
 		}
 	}
 }
