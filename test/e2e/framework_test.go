@@ -262,6 +262,10 @@ func waitForDeploymentReady(ctx context.Context, namespace, name string) error {
 }
 
 func serverPodPatch() string {
+	return serverPodPatchWithArgs()
+}
+
+func serverPodPatchWithArgs(serverArgs ...string) string {
 	patch := map[string]any{
 		"metadata": map[string]any{
 			"namespace": testNS,
@@ -269,6 +273,29 @@ func serverPodPatch() string {
 				"krelay-e2e-run-id": testRunID,
 			},
 		},
+	}
+	img := os.Getenv("KRELAY_SERVER_IMAGE")
+	if img != "" {
+		container := map[string]any{
+			"name":            "krelay-server",
+			"image":           img,
+			"imagePullPolicy": "IfNotPresent",
+		}
+		if len(serverArgs) > 0 {
+			container["args"] = serverArgs
+		}
+		patch["spec"] = map[string]any{
+			"containers": []any{container},
+		}
+	} else if len(serverArgs) > 0 {
+		patch["spec"] = map[string]any{
+			"containers": []any{
+				map[string]any{
+					"name": "krelay-server",
+					"args": serverArgs,
+				},
+			},
+		}
 	}
 	b, _ := json.Marshal(patch)
 	return string(b)
@@ -361,6 +388,79 @@ func startKrelay(t *testing.T, readyCount int, readyPattern string, args ...stri
 	return ki
 }
 
+// startKrelayWithServerArgs is like startKrelay but injects custom server
+// container args (e.g., --idle-timeout=15s) into the pod patch.
+func startKrelayWithServerArgs(t *testing.T, serverArgs []string, readyCount int, readyPattern string, args ...string) *krelayInstance {
+	t.Helper()
+
+	fullArgs := append([]string{}, args...)
+	if img := os.Getenv("KRELAY_SERVER_IMAGE"); img != "" {
+		fullArgs = append(fullArgs, "--server.image", img)
+	}
+	fullArgs = append(fullArgs, "--patch", serverPodPatchWithArgs(serverArgs...))
+
+	cmd := exec.Command(krelayBin, fullArgs...)
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	cmd.Stdout = w
+	cmd.Stderr = w
+
+	require.NoError(t, cmd.Start())
+	w.Close()
+
+	ki := &krelayInstance{t: t, cmd: cmd, done: make(chan struct{})}
+
+	go func() {
+		_ = cmd.Wait()
+		close(ki.done)
+	}()
+
+	ready := make(chan struct{})
+	matchCount := 0
+
+	go func() {
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			line := scanner.Text()
+			ki.mu.Lock()
+			ki.output = append(ki.output, line)
+			if strings.Contains(line, readyPattern) {
+				ki.readyLines = append(ki.readyLines, line)
+				matchCount++
+				if matchCount >= readyCount {
+					select {
+					case <-ready:
+					default:
+						close(ready)
+					}
+				}
+			}
+			ki.mu.Unlock()
+		}
+		r.Close()
+	}()
+
+	select {
+	case <-ready:
+		t.Log("krelay is ready")
+	case <-ki.done:
+		ki.mu.Lock()
+		out := strings.Join(ki.output, "\n")
+		ki.mu.Unlock()
+		t.Fatalf("krelay exited before becoming ready. Output:\n%s", out)
+	case <-time.After(3 * time.Minute):
+		ki.stop()
+		ki.mu.Lock()
+		out := strings.Join(ki.output, "\n")
+		ki.mu.Unlock()
+		t.Fatalf("krelay did not become ready within 3 minutes. Output:\n%s", out)
+	}
+
+	t.Cleanup(ki.stop)
+	return ki
+}
+
 func (ki *krelayInstance) stop() {
 	ki.mu.Lock()
 	if ki.stopped {
@@ -377,6 +477,19 @@ func (ki *krelayInstance) stop() {
 		_ = ki.cmd.Process.Kill()
 		<-ki.done
 	}
+}
+
+func (ki *krelayInstance) kill() {
+	ki.mu.Lock()
+	if ki.stopped {
+		ki.mu.Unlock()
+		return
+	}
+	ki.stopped = true
+	ki.mu.Unlock()
+
+	_ = ki.cmd.Process.Kill()
+	<-ki.done
 }
 
 func (ki *krelayInstance) dumpOutput() string {
@@ -400,6 +513,39 @@ func (ki *krelayInstance) localPorts(t *testing.T) []int {
 	}
 	require.NotEmpty(t, ports, "no local ports found in krelay output")
 	return ports
+}
+
+// listKrelayJobs returns all krelay-server Jobs in the test namespace.
+func listKrelayJobs(t *testing.T) []string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	jobs, err := kubeClient.BatchV1().Jobs(testNS).List(ctx, metav1.ListOptions{
+		LabelSelector: "app=krelay-server",
+	})
+	require.NoError(t, err)
+	var names []string
+	for _, j := range jobs.Items {
+		names = append(names, j.Name)
+	}
+	return names
+}
+
+// waitForNoKrelayJobs polls until no krelay-server Jobs remain in the test namespace.
+func waitForNoKrelayJobs(t *testing.T, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		names := listKrelayJobs(t)
+		if len(names) == 0 {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("krelay-server jobs still present after %s: %v", timeout, names)
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // httpGetOK performs an HTTP GET and asserts a 200 response.
