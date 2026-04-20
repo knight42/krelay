@@ -21,6 +21,10 @@ lint:
 test:
 	go test -race -v ./...
 
+.PHONY: test-e2e
+test-e2e:
+	go test -tags e2e -v -timeout 15m ./test/e2e/
+
 .PHONY: coverage
 coverage:
 	go test -race -v -coverprofile=cover.out ./...
