@@ -13,8 +13,8 @@ import (
 )
 
 func TestUDPForwardService(t *testing.T) {
-	port := freePort(t)
-	startKrelay(t, "Forwarding", "-n", "kube-system", "svc/kube-dns", fmt.Sprintf("%d:53@udp", port))
+	ki := startKrelay(t, 1, "Forwarding", "-n", "kube-system", "svc/kube-dns", ":53@udp")
+	port := ki.localPorts(t)[0]
 
 	r := &net.Resolver{
 		PreferGo: true,

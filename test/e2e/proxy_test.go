@@ -15,8 +15,8 @@ import (
 )
 
 func TestSOCKS5Proxy(t *testing.T) {
-	port := freePort(t)
-	startKrelay(t, "SOCKS5 server is running", "proxy", "--listen", fmt.Sprintf("127.0.0.1:%d", port))
+	ki := startKrelay(t, 1, "SOCKS5 server is running", "proxy", "--listen", "127.0.0.1:0")
+	port := ki.localPorts(t)[0]
 
 	dialer, err := proxy.SOCKS5("tcp", fmt.Sprintf("127.0.0.1:%d", port), nil, proxy.Direct)
 	require.NoError(t, err)

@@ -8,15 +8,12 @@ import (
 )
 
 func TestForwardToClusterIP(t *testing.T) {
-	port := freePort(t)
-	startKrelay(t, "Forwarding", fmt.Sprintf("ip/%s", svcClusterIP), fmt.Sprintf("%d:80", port))
-	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", port))
+	ki := startKrelay(t, 1, "Forwarding", fmt.Sprintf("ip/%s", svcClusterIP), ":80")
+	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", ki.localPorts(t)[0]))
 }
 
 func TestForwardToHostname(t *testing.T) {
-	port := freePort(t)
-	startKrelay(t, "Forwarding",
-		fmt.Sprintf("host/test-nginx-svc.%s.svc.cluster.local", testNS),
-		fmt.Sprintf("%d:80", port))
-	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", port))
+	ki := startKrelay(t, 1, "Forwarding",
+		fmt.Sprintf("host/test-nginx-svc.%s.svc.cluster.local", testNS), ":80")
+	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", ki.localPorts(t)[0]))
 }

@@ -11,20 +11,15 @@ import (
 )
 
 func TestMultiplePorts(t *testing.T) {
-	port1 := freePort(t)
-	port2 := freePort(t)
-	startKrelay(t, "Forwarding", "-n", testNS, "svc/test-nginx-svc",
-		fmt.Sprintf("%d:80", port1), fmt.Sprintf("%d:80", port2))
-	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", port1))
-	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", port2))
+	ki := startKrelay(t, 2, "Forwarding", "-n", testNS, "svc/test-nginx-svc", ":80", ":80")
+	ports := ki.localPorts(t)
+	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[0]))
+	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[1]))
 }
 
 func TestMultiTargetFile(t *testing.T) {
-	port1 := freePort(t)
-	port2 := freePort(t)
-
-	content := fmt.Sprintf("-n %s pod/test-nginx-pod %d:80\n-n %s svc/test-nginx-svc %d:80\n",
-		testNS, port1, testNS, port2)
+	content := fmt.Sprintf("-n %s pod/test-nginx-pod :80\n-n %s svc/test-nginx-svc :80\n",
+		testNS, testNS)
 
 	tmpFile, err := os.CreateTemp("", "krelay-targets-*.txt")
 	require.NoError(t, err)
@@ -34,7 +29,8 @@ func TestMultiTargetFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tmpFile.Close())
 
-	startKrelay(t, "Forwarding", "-f", tmpFile.Name())
-	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", port1))
-	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", port2))
+	ki := startKrelay(t, 2, "Forwarding", "-f", tmpFile.Name())
+	ports := ki.localPorts(t)
+	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[0]))
+	httpGetOK(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[1]))
 }

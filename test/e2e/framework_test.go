@@ -5,12 +5,14 @@ package e2e
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -37,9 +39,6 @@ func TestMain(m *testing.M) {
 	var code int
 	defer func() { os.Exit(code) }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "find repo root: %v\n", err)
@@ -55,9 +54,11 @@ func TestMain(m *testing.M) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	krelayBin = filepath.Join(tmpDir, "krelay")
 	fmt.Println("Building krelay binary...")
-	buildCmd := exec.CommandContext(ctx, "go", "build", "-o", krelayBin, "./cmd/client")
+	krelayBin = filepath.Join(tmpDir, "krelay")
+	buildCtx, buildCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer buildCancel()
+	buildCmd := exec.CommandContext(buildCtx, "go", "build", "-o", krelayBin, "./cmd/client")
 	buildCmd.Dir = repoRoot
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
@@ -67,6 +68,9 @@ func TestMain(m *testing.M) {
 		return
 	}
 
+	clusterCtx, clusterCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer clusterCancel()
+
 	kubeClient, err = buildKubeClient()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create k8s client: %v\n", err)
@@ -74,10 +78,12 @@ func TestMain(m *testing.M) {
 		return
 	}
 
+	cleanupStaleNamespaces(clusterCtx)
+
 	testRunID = fmt.Sprintf("%x", time.Now().UnixNano())
 	testNS = fmt.Sprintf("krelay-e2e-%s", testRunID)
 	fmt.Printf("Creating test namespace %s...\n", testNS)
-	_, err = kubeClient.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+	_, err = kubeClient.CoreV1().Namespaces().Create(clusterCtx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: testNS},
 	}, metav1.CreateOptions{})
 	if err != nil {
@@ -86,14 +92,12 @@ func TestMain(m *testing.M) {
 		return
 	}
 	defer func() {
-		cleanupCtx := context.Background()
-		cleanupServerPods(cleanupCtx)
 		fmt.Printf("Deleting test namespace %s...\n", testNS)
-		_ = kubeClient.CoreV1().Namespaces().Delete(cleanupCtx, testNS, metav1.DeleteOptions{})
+		_ = kubeClient.CoreV1().Namespaces().Delete(context.Background(), testNS, metav1.DeleteOptions{})
 	}()
 
 	fmt.Println("Deploying test fixtures...")
-	if err := deployFixtures(ctx); err != nil {
+	if err := deployFixtures(clusterCtx); err != nil {
 		fmt.Fprintf(os.Stderr, "deploy fixtures: %v\n", err)
 		code = 1
 		return
@@ -259,39 +263,57 @@ func waitForDeploymentReady(ctx context.Context, namespace, name string) error {
 	}
 }
 
-func cleanupServerPods(ctx context.Context) {
-	pods, err := kubeClient.CoreV1().Pods(metav1.NamespaceDefault).List(ctx, metav1.ListOptions{
-		LabelSelector: "krelay-e2e-run-id=" + testRunID,
-	})
+func cleanupStaleNamespaces(ctx context.Context) {
+	nsList, err := kubeClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "list krelay-server pods: %v\n", err)
 		return
 	}
-	for _, pod := range pods.Items {
-		fmt.Printf("Cleaning up leftover server pod %s...\n", pod.Name)
-		_ = kubeClient.CoreV1().Pods(metav1.NamespaceDefault).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+	cutoff := time.Now().Add(-30 * time.Minute)
+	for _, ns := range nsList.Items {
+		if strings.HasPrefix(ns.Name, "krelay-e2e-") && ns.CreationTimestamp.Time.Before(cutoff) {
+			fmt.Printf("Cleaning up stale namespace %s...\n", ns.Name)
+			_ = kubeClient.CoreV1().Namespaces().Delete(ctx, ns.Name, metav1.DeleteOptions{})
+		}
 	}
+}
+
+func serverPodPatch() string {
+	patch := map[string]any{
+		"metadata": map[string]any{
+			"namespace": testNS,
+			"labels": map[string]string{
+				"krelay-e2e-run-id": testRunID,
+			},
+		},
+	}
+	b, _ := json.Marshal(patch)
+	return string(b)
 }
 
 // krelayInstance manages a running krelay process.
 type krelayInstance struct {
-	t       *testing.T
-	cmd     *exec.Cmd
-	mu      sync.Mutex
-	output  []string
-	stopped bool
+	t          *testing.T
+	cmd        *exec.Cmd
+	mu         sync.Mutex
+	output     []string
+	readyLines []string
+	done       chan struct{}
+	stopped    bool
 }
 
-// startKrelay launches a krelay process and waits until it logs the readyPattern.
-func startKrelay(t *testing.T, readyPattern string, args ...string) *krelayInstance {
+var portRe = regexp.MustCompile(`(?:localAddr|address)=\S+:(\d+)`)
+
+// startKrelay launches a krelay process and waits until readyCount occurrences
+// of readyPattern appear in its output. It fails immediately if the process
+// exits before becoming ready.
+func startKrelay(t *testing.T, readyCount int, readyPattern string, args ...string) *krelayInstance {
 	t.Helper()
 
 	fullArgs := append([]string{}, args...)
 	if img := os.Getenv("KRELAY_SERVER_IMAGE"); img != "" {
 		fullArgs = append(fullArgs, "--server.image", img)
 	}
-	fullArgs = append(fullArgs, "--patch",
-		fmt.Sprintf(`{"metadata":{"labels":{"krelay-e2e-run-id":"%s"}}}`, testRunID))
+	fullArgs = append(fullArgs, "--patch", serverPodPatch())
 
 	cmd := exec.Command(krelayBin, fullArgs...)
 
@@ -303,10 +325,15 @@ func startKrelay(t *testing.T, readyPattern string, args ...string) *krelayInsta
 	require.NoError(t, cmd.Start())
 	w.Close()
 
-	ki := &krelayInstance{t: t, cmd: cmd}
+	ki := &krelayInstance{t: t, cmd: cmd, done: make(chan struct{})}
+
+	go func() {
+		_ = cmd.Wait()
+		close(ki.done)
+	}()
 
 	ready := make(chan struct{})
-	var readyOnce sync.Once
+	matchCount := 0
 
 	go func() {
 		scanner := bufio.NewScanner(r)
@@ -314,10 +341,18 @@ func startKrelay(t *testing.T, readyPattern string, args ...string) *krelayInsta
 			line := scanner.Text()
 			ki.mu.Lock()
 			ki.output = append(ki.output, line)
-			ki.mu.Unlock()
 			if strings.Contains(line, readyPattern) {
-				readyOnce.Do(func() { close(ready) })
+				ki.readyLines = append(ki.readyLines, line)
+				matchCount++
+				if matchCount >= readyCount {
+					select {
+					case <-ready:
+					default:
+						close(ready)
+					}
+				}
 			}
+			ki.mu.Unlock()
 		}
 		r.Close()
 	}()
@@ -325,6 +360,11 @@ func startKrelay(t *testing.T, readyPattern string, args ...string) *krelayInsta
 	select {
 	case <-ready:
 		t.Log("krelay is ready")
+	case <-ki.done:
+		ki.mu.Lock()
+		out := strings.Join(ki.output, "\n")
+		ki.mu.Unlock()
+		t.Fatalf("krelay exited before becoming ready. Output:\n%s", out)
 	case <-time.After(3 * time.Minute):
 		ki.stop()
 		ki.mu.Lock()
@@ -347,13 +387,11 @@ func (ki *krelayInstance) stop() {
 	ki.mu.Unlock()
 
 	_ = ki.cmd.Process.Signal(os.Interrupt)
-	done := make(chan error, 1)
-	go func() { done <- ki.cmd.Wait() }()
 	select {
-	case <-done:
+	case <-ki.done:
 	case <-time.After(30 * time.Second):
 		_ = ki.cmd.Process.Kill()
-		<-done
+		<-ki.done
 	}
 }
 
@@ -363,14 +401,21 @@ func (ki *krelayInstance) dumpOutput() string {
 	return strings.Join(ki.output, "\n")
 }
 
-// freePort returns an available TCP port on localhost.
-func freePort(t *testing.T) int {
+// localPorts extracts the bound local ports from the readiness log lines.
+func (ki *krelayInstance) localPorts(t *testing.T) []int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-	return port
+	ki.mu.Lock()
+	defer ki.mu.Unlock()
+	var ports []int
+	for _, line := range ki.readyLines {
+		m := portRe.FindStringSubmatch(line)
+		if m != nil {
+			p, _ := strconv.Atoi(m[1])
+			ports = append(ports, p)
+		}
+	}
+	require.NotEmpty(t, ports, "no local ports found in krelay output")
+	return ports
 }
 
 // httpGetOK performs an HTTP GET and asserts a 200 response.
