@@ -23,7 +23,7 @@ test:
 
 .PHONY: test-e2e
 test-e2e:
-	go test -tags e2e -v -timeout 15m ./test/e2e/
+	go test -count=1 -tags e2e -v -timeout 15m ./test/e2e/
 
 .PHONY: coverage
 coverage:

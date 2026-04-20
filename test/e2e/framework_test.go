@@ -29,6 +29,7 @@ var (
 	krelayBin    string
 	kubeClient   kubernetes.Interface
 	testNS       string
+	testRunID    string
 	svcClusterIP string
 )
 
@@ -73,7 +74,8 @@ func TestMain(m *testing.M) {
 		return
 	}
 
-	testNS = fmt.Sprintf("krelay-e2e-%d", time.Now().UnixNano())
+	testRunID = fmt.Sprintf("%x", time.Now().UnixNano())
+	testNS = fmt.Sprintf("krelay-e2e-%s", testRunID)
 	fmt.Printf("Creating test namespace %s...\n", testNS)
 	_, err = kubeClient.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: testNS},
@@ -89,8 +91,6 @@ func TestMain(m *testing.M) {
 		fmt.Printf("Deleting test namespace %s...\n", testNS)
 		_ = kubeClient.CoreV1().Namespaces().Delete(cleanupCtx, testNS, metav1.DeleteOptions{})
 	}()
-
-	cleanupServerPods(ctx)
 
 	fmt.Println("Deploying test fixtures...")
 	if err := deployFixtures(ctx); err != nil {
@@ -261,7 +261,7 @@ func waitForDeploymentReady(ctx context.Context, namespace, name string) error {
 
 func cleanupServerPods(ctx context.Context) {
 	pods, err := kubeClient.CoreV1().Pods(metav1.NamespaceDefault).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/name=krelay-server",
+		LabelSelector: "krelay-e2e-run-id=" + testRunID,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "list krelay-server pods: %v\n", err)
@@ -290,6 +290,8 @@ func startKrelay(t *testing.T, readyPattern string, args ...string) *krelayInsta
 	if img := os.Getenv("KRELAY_SERVER_IMAGE"); img != "" {
 		fullArgs = append(fullArgs, "--server.image", img)
 	}
+	fullArgs = append(fullArgs, "--patch",
+		fmt.Sprintf(`{"metadata":{"labels":{"krelay-e2e-run-id":"%s"}}}`, testRunID))
 
 	cmd := exec.Command(krelayBin, fullArgs...)
 
