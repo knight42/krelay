@@ -16,7 +16,6 @@ import (
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -24,6 +23,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
+	"k8s.io/streaming/pkg/httpstream"
 
 	slogutil "github.com/knight42/krelay/pkg/slog"
 )
@@ -113,16 +113,16 @@ func createDialer(restCfg *rest.Config, dstURL *url.URL) (httpstream.Dialer, err
 	if err != nil {
 		return nil, err
 	}
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, dstURL)
+	dialer := spdy.NewDialerForStreaming(upgrader, &http.Client{Transport: transport}, http.MethodPost, dstURL)
 
 	if strings.ToLower(os.Getenv("KUBECTL_PORT_FORWARD_WEBSOCKETS")) != "false" {
 		slog.Debug("Trying to forward ports using websocket")
 
-		tunnelDialer, err := portforward.NewSPDYOverWebsocketDialer(dstURL, restCfg)
+		tunnelDialer, err := portforward.NewSPDYOverWebsocketDialerForStreaming(dstURL, restCfg)
 		if err != nil {
 			return nil, fmt.Errorf("create tunneling dialer: %w", err)
 		}
-		dialer = portforward.NewFallbackDialer(tunnelDialer, dialer, func(err error) bool {
+		dialer = portforward.NewFallbackDialerForStreaming(tunnelDialer, dialer, func(err error) bool {
 			shouldFallback := httpstream.IsUpgradeFailure(err) || httpstream.IsHTTPSProxyError(err)
 			if shouldFallback {
 				slog.Debug("Websocket upgrade failed, falling back to SPDY")

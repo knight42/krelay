@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/streaming/pkg/httpstream"
 
 	"github.com/knight42/krelay/pkg/kube"
 	slogutil "github.com/knight42/krelay/pkg/slog"

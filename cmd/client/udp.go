@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net"
 
-	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/streaming/pkg/httpstream"
 
 	"github.com/knight42/krelay/pkg/constants"
 	slogutil "github.com/knight42/krelay/pkg/slog"
