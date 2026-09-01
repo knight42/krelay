@@ -161,13 +161,12 @@ func (o *options) run(ctx context.Context, args []string) error {
 	defer tc.Close()
 
 	slog.Info("Establishing tunnel to krelay-server")
-	pingCtx, cancel := context.WithTimeout(ctx, time.Minute)
-	_, err = tc.Ping(pingCtx)
+	establishCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	err = establishTunnel(establishCtx, tc)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("establish tunnel: %w", err)
 	}
-	slog.Info("Tunnel established")
 
 	go maintainHeartbeat(ctx, tc)
 	for _, f := range fwds {

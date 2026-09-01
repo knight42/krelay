@@ -77,6 +77,39 @@ func (f *forwarder) handleConn(ctx context.Context, tc *tailcat.Client, conn net
 	tailcat.ProxyConns(conn, remote)
 }
 
+// establishTunnel pings krelay-server until it acknowledges this client.
+// A single tailcat Ping sends one meow packet over DERP with no
+// retransmission, and the relay silently drops the packet if the server has
+// not finished registering with it when the packet arrives — the server
+// prints its token before that registration completes, so the very first
+// meow regularly loses this race. The handshake is idempotent, so retry with
+// a short per-attempt deadline (well above the observed ~10ms relay RTT)
+// instead of sitting out Ping's internal 10s cap on a packet that is
+// already gone.
+func establishTunnel(ctx context.Context, tc *tailcat.Client) error {
+	for attempt := 1; ; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		res, err := tc.Ping(attemptCtx)
+		cancel()
+		if err == nil {
+			slog.Info("Tunnel established",
+				slog.Duration("derpLatency", res.Latency),
+				slog.Int("attempt", attempt),
+			)
+			return nil
+		}
+		if ctx.Err() != nil {
+			return err
+		}
+		slog.Debug("Fail to reach krelay-server, retrying", slog.Int("attempt", attempt), slog.Any("error", err))
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
 // dialTunnel opens a tunnel connection to krelay-server and completes the
 // dial handshake for dest (empty dest opens a heartbeat connection).
 func dialTunnel(ctx context.Context, tc *tailcat.Client, dest string) (net.Conn, error) {
