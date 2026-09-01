@@ -1,0 +1,26 @@
+version: "2"
+
+linters:
+  enable:
+    - modernize
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (net.Conn).Close
+        - (net.Listener).Close
+        - (*os.File).Close
+        - (*github.com/tailscale/tailcat.Client).Close
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/knight42/krelay
