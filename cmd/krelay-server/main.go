@@ -77,18 +77,23 @@ func main() {
 	region := pick.Region[0]
 	log.Printf("selected DERP region %d (%s)", region.RegionID, region.RegionName)
 
+	// The pre-shared key is mixed into every WireGuard handshake; the server
+	// and the address handed to the client must carry the same one.
+	psk := tailcat.NewPresharedKey()
 	ci := &tailcat.ConnInfo{
 		ServerPublic:      tailcat.NodePublic{NodePublic: priv.Public()},
 		ServerDiscoPublic: tailcat.DiscoPublicForNode(priv),
+		PresharedKey:      psk,
 		Region:            []*tailcfg.DERPRegion{region},
 	}
-	token := ci.ConnBlob()
+	token := ci.Addr()
 
 	tracker := &activityTracker{}
 	tracker.lastActivity.Store(time.Now().UnixNano())
 
 	srv := &tailcat.Server{
 		Key:            priv,
+		PresharedKey:   psk,
 		Region:         region,
 		AllowedClients: []key.NodePublic{clientKey},
 		ServedTCPPorts: []filter.PortRange{{First: constants.TunnelPort, Last: constants.TunnelPort}},

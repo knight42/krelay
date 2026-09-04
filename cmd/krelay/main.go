@@ -154,7 +154,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 		tcLogf = logger.WithPrefix(log.Printf, "tailcat: ")
 	}
 	tc := &tailcat.Client{
-		Server: tailcat.ConnBlob(token),
+		Server: tailcat.Addr(token),
 		Key:    priv,
 		Logf:   tcLogf,
 	}

@@ -78,19 +78,14 @@ func (f *forwarder) handleConn(ctx context.Context, tc *tailcat.Client, conn net
 }
 
 // establishTunnel pings krelay-server until it acknowledges this client.
-// A single tailcat Ping sends one meow packet over DERP with no
-// retransmission, and the relay silently drops the packet if the server has
-// not finished registering with it when the packet arrives — the server
-// prints its token before that registration completes, so the very first
-// meow regularly loses this race. The handshake is idempotent, so retry with
-// a short per-attempt deadline (well above the observed ~10ms relay RTT)
-// instead of sitting out Ping's internal 10s cap on a packet that is
-// already gone.
+// tailcat's Ping re-sends the meow every second within its internal 10s
+// window, which covers the race where the server prints its token before its
+// DERP registration completes. The outer loop retries whole windows, bounded
+// by ctx, for failures a single window can't ride out (e.g. transient
+// network trouble on either side).
 func establishTunnel(ctx context.Context, tc *tailcat.Client) error {
 	for attempt := 1; ; attempt++ {
-		attemptCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		res, err := tc.Ping(attemptCtx)
-		cancel()
+		res, err := tc.Ping(ctx)
 		if err == nil {
 			slog.Info("Tunnel established",
 				slog.Duration("derpLatency", res.Latency),
