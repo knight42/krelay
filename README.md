@@ -18,7 +18,8 @@ instead of being funneled through the Kubernetes apiserver.
 * Forwarding to a workload survives rolling updates: each new connection
   re-resolves a ready pod.
 * Simultaneous forwarding to multiple targets (`-f targets.txt`).
-* TCP only for now. UDP is planned.
+* TCP and UDP. Note: the tunnel's MTU limits UDP payloads to 1232 bytes
+  (`tailcat.MaxUDPPayload`); larger datagrams may be dropped.
 
 ## Usage
 
@@ -32,12 +33,17 @@ kubectl relay host/redis.cn-north-1.cache.amazonaws.com 6379
 # Survives rolling updates
 kubectl relay deploy/backend 5000
 
+# Forward a UDP port (e.g. DNS)
+kubectl relay -n kube-system svc/kube-dns 10053:53@udp
+
 # Multiple targets
 kubectl relay -f targets.txt
 ```
 
-Port syntax: `[LOCAL_PORT:]REMOTE_PORT`, where `REMOTE_PORT` may be a named
-port of the target object. `:REMOTE_PORT` picks an ephemeral local port.
+Port syntax: `[LOCAL_PORT:]REMOTE_PORT[@PROTOCOL]`, where `REMOTE_PORT` may
+be a named port of the target object (its declared protocol is used unless
+`@tcp`/`@udp` is given; numeric ports default to TCP). `:REMOTE_PORT` picks
+an ephemeral local port.
 
 ## How it works
 
