@@ -19,7 +19,9 @@ instead of being funneled through the Kubernetes apiserver.
   re-resolves a ready pod.
 * Simultaneous forwarding to multiple targets (`-f targets.txt`).
 * TCP and UDP. Note: the tunnel's MTU limits UDP payloads to 1232 bytes
-  (`tailcat.MaxUDPPayload`); larger datagrams may be dropped.
+  (`tailcat.MaxUDPPayload`); larger datagrams may be dropped. Replies must
+  come from the forwarded address and port — protocols that answer from an
+  ephemeral port (e.g. TFTP) are not supported.
 
 ## Usage
 
