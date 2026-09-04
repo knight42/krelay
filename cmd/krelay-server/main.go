@@ -216,10 +216,15 @@ func handleUDPFlow(c tailcat.ConnPacketConn, tracker *activityTracker) {
 	// upstream->client from the start.
 	go func() {
 		b := make([]byte, 65535)
+		oversizeWarned := false
 		for {
 			n, err := upstream.Read(b)
 			if err != nil {
 				return
+			}
+			if n > tailcat.MaxUDPPayload && !oversizeWarned {
+				oversizeWarned = true
+				log.Printf("%d-byte UDP reply from %s exceeds the tunnel MTU (%d bytes) and will not reach the client", n, target, tailcat.MaxUDPPayload)
 			}
 			if _, err := c.Write(b[:n]); err != nil {
 				return

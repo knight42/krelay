@@ -122,6 +122,15 @@ func (o *options) run(ctx context.Context, args []string) error {
 	if bound == 0 {
 		return errors.New("unable to listen on any of the requested ports")
 	}
+	for _, f := range fwds {
+		if f.bound() && f.ports.Proto == ports.ProtocolUDP {
+			// Measured behavior, not just documentation: oversized datagrams
+			// are dropped silently on both the direct and the DERP path.
+			slog.Warn("UDP datagrams larger than the tunnel MTU are dropped",
+				slog.Int("maxPayload", tailcat.MaxUDPPayload))
+			break
+		}
+	}
 
 	priv := key.NewNode()
 	token := o.serverToken

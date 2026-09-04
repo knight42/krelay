@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tailscale/tailcat"
@@ -55,6 +56,8 @@ type udpRelay struct {
 	fwd *forwarder
 	tc  *tailcat.Client
 
+	oversizeWarned atomic.Bool
+
 	mu       sync.Mutex
 	sessions map[netip.AddrPort]*udpSession
 }
@@ -69,6 +72,13 @@ type udpSession struct {
 // deliver routes one local datagram to the peer's session, creating the
 // session (and its tunnel flow) on first sight of the peer.
 func (r *udpRelay) deliver(ctx context.Context, peer netip.AddrPort, datagram []byte) {
+	if len(datagram) > tailcat.MaxUDPPayload && !r.oversizeWarned.Swap(true) {
+		slog.Warn("UDP datagram exceeds the tunnel MTU and will not reach the target",
+			slog.Int("size", len(datagram)),
+			slog.Int("limit", tailcat.MaxUDPPayload),
+			slog.String("target", r.fwd.target.String()),
+		)
+	}
 	r.mu.Lock()
 	sess := r.sessions[peer]
 	if sess == nil {
