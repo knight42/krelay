@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -97,11 +98,18 @@ func main() {
 		Region:         region,
 		AllowedClients: []key.NodePublic{clientKey},
 		ServedTCPPorts: []filter.PortRange{{First: constants.TunnelPort, Last: constants.TunnelPort}},
+		ServedUDPPorts: []filter.PortRange{{First: constants.TunnelPort, Last: constants.TunnelPort}},
 		OnTCP: func(port uint16) func(net.Conn) {
 			if port != constants.TunnelPort {
 				return nil // RST
 			}
 			return func(c net.Conn) { handleTunnelConn(c, tracker) }
+		},
+		OnUDP: func(port uint16) func(tailcat.ConnPacketConn) {
+			if port != constants.TunnelPort {
+				return nil
+			}
+			return func(c tailcat.ConnPacketConn) { handleUDPFlow(c, tracker) }
 		},
 	}
 	if err := srv.Start(); err != nil {
@@ -166,4 +174,76 @@ func handleTunnelConn(c net.Conn, tracker *activityTracker) {
 	}
 	log.Printf("connected to %s", target)
 	tailcat.ProxyConns(c, upstream)
+}
+
+// handleUDPFlow relays one UDP flow. The first datagram carries a dial
+// request naming the destination; the server acknowledges it with a dial
+// response datagram and then relays datagrams verbatim in both directions.
+// tailcat closes the flow after its UDPIdleTimeout of inactivity.
+func handleUDPFlow(c tailcat.ConnPacketConn, tracker *activityTracker) {
+	tracker.connStarted()
+	defer tracker.connEnded()
+	defer c.Close()
+
+	buf := make([]byte, 65535)
+	_ = c.SetReadDeadline(time.Now().Add(30 * time.Second))
+	n, err := c.Read(buf)
+	if err != nil {
+		return
+	}
+	target, err := protocol.ReadDialRequest(bytes.NewReader(buf[:n]))
+	if err != nil || target == "" {
+		log.Printf("bad UDP dial request: %v", err)
+		return
+	}
+	request := bytes.Clone(buf[:n])
+
+	upstream, err := net.Dial("udp", target)
+	var ack bytes.Buffer
+	_ = protocol.WriteDialResponse(&ack, err)
+	if _, werr := c.Write(ack.Bytes()); werr != nil || err != nil {
+		if err != nil {
+			log.Printf("dial udp %s: %v", target, err)
+		}
+		return
+	}
+	defer upstream.Close()
+	_ = c.SetReadDeadline(time.Time{})
+	log.Printf("connected to %s (udp)", target)
+
+	// The upstream peer cannot send anything before the first datagram we
+	// forward reveals our source address, so nothing is lost by pumping
+	// upstream->client from the start.
+	go func() {
+		b := make([]byte, 65535)
+		for {
+			n, err := upstream.Read(b)
+			if err != nil {
+				return
+			}
+			if _, err := c.Write(b[:n]); err != nil {
+				return
+			}
+		}
+	}()
+	awaitingFirst := true
+	for {
+		n, err := c.Read(buf)
+		if err != nil {
+			return
+		}
+		if awaitingFirst && bytes.Equal(buf[:n], request) {
+			// The client re-sent the dial request, meaning our ack was
+			// lost: acknowledge again. Once real data has flowed the
+			// client is past the handshake and never re-sends.
+			if _, err := c.Write(ack.Bytes()); err != nil {
+				return
+			}
+			continue
+		}
+		awaitingFirst = false
+		if _, err := upstream.Write(buf[:n]); err != nil {
+			return
+		}
+	}
 }

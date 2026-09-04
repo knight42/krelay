@@ -12,6 +12,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/knight42/krelay/pkg/ports"
 )
 
 // Target identifies what to forward to.
@@ -74,7 +76,7 @@ func (s staticAddr) Get(context.Context) (string, error) { return string(s), nil
 
 // Resolve returns the address getter for t along with the named ports
 // declared by the target object (empty for ip and host targets).
-func Resolve(ctx context.Context, cs kubernetes.Interface, t Target) (AddrGetter, map[string]uint16, error) {
+func Resolve(ctx context.Context, cs kubernetes.Interface, t Target) (AddrGetter, map[string]ports.NamedPort, error) {
 	switch t.Kind {
 	case "ip":
 		if _, err := netip.ParseAddr(t.Name); err != nil {
@@ -90,10 +92,10 @@ func Resolve(ctx context.Context, cs kubernetes.Interface, t Target) (AddrGetter
 		if err != nil {
 			return nil, nil, err
 		}
-		namedPorts := make(map[string]uint16)
+		namedPorts := make(map[string]ports.NamedPort)
 		for _, p := range svc.Spec.Ports {
-			if p.Name != "" && p.Protocol == corev1.ProtocolTCP {
-				namedPorts[p.Name] = uint16(p.Port)
+			if p.Name != "" {
+				namedPorts[p.Name] = ports.NamedPort{Port: uint16(p.Port), Proto: protoOf(p.Protocol)}
 			}
 		}
 		// The in-cluster DNS name keeps working across endpoint changes and
@@ -160,16 +162,23 @@ func workloadSelector(ctx context.Context, cs kubernetes.Interface, t Target) (s
 	return parsed.String(), spec, nil
 }
 
-func namedContainerPorts(spec corev1.PodSpec) map[string]uint16 {
-	ret := make(map[string]uint16)
+func namedContainerPorts(spec corev1.PodSpec) map[string]ports.NamedPort {
+	ret := make(map[string]ports.NamedPort)
 	for _, c := range spec.Containers {
 		for _, p := range c.Ports {
-			if p.Name != "" && (p.Protocol == "" || p.Protocol == corev1.ProtocolTCP) {
-				ret[p.Name] = uint16(p.ContainerPort)
+			if p.Name != "" {
+				ret[p.Name] = ports.NamedPort{Port: uint16(p.ContainerPort), Proto: protoOf(p.Protocol)}
 			}
 		}
 	}
 	return ret
+}
+
+func protoOf(p corev1.Protocol) string {
+	if p == corev1.ProtocolUDP {
+		return ports.ProtocolUDP
+	}
+	return ports.ProtocolTCP
 }
 
 // selectorAddr picks a ready pod matching a workload's selector on every

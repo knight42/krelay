@@ -23,29 +23,57 @@ type forwarder struct {
 	ports      ports.Pair
 	listenAddr string
 
-	ln net.Listener
+	ln    net.Listener // TCP targets
+	udpLn *net.UDPConn // UDP targets
 }
 
 func (f *forwarder) listen() error {
-	ln, err := net.Listen("tcp", net.JoinHostPort(f.listenAddr, strconv.Itoa(int(f.ports.Local))))
-	if err != nil {
-		return err
+	addr := net.JoinHostPort(f.listenAddr, strconv.Itoa(int(f.ports.Local)))
+	var from string
+	if f.ports.Proto == ports.ProtocolUDP {
+		udpAddr, err := net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			return err
+		}
+		f.udpLn, err = net.ListenUDP("udp", udpAddr)
+		if err != nil {
+			return err
+		}
+		from = f.udpLn.LocalAddr().String()
+	} else {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return err
+		}
+		f.ln = ln
+		from = ln.Addr().String()
 	}
-	f.ln = ln
 	slog.Info("Forwarding",
-		slog.String("from", ln.Addr().String()),
+		slog.String("from", from),
 		slog.String("to", fmt.Sprintf("%s:%d", f.target, f.ports.Remote)),
+		slog.String("proto", f.ports.Proto),
 	)
 	return nil
+}
+
+func (f *forwarder) bound() bool {
+	return f.ln != nil || f.udpLn != nil
 }
 
 func (f *forwarder) close() {
 	if f.ln != nil {
 		_ = f.ln.Close()
 	}
+	if f.udpLn != nil {
+		_ = f.udpLn.Close()
+	}
 }
 
 func (f *forwarder) run(ctx context.Context, tc *tailcat.Client) {
+	if f.ports.Proto == ports.ProtocolUDP {
+		f.runUDP(ctx, tc)
+		return
+	}
 	for {
 		conn, err := f.ln.Accept()
 		if err != nil {
