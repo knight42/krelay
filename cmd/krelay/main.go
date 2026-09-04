@@ -169,6 +169,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 	}
 
 	go maintainHeartbeat(ctx, tc)
+	go monitorPath(ctx, tc)
 	for _, f := range fwds {
 		if f.bound() {
 			go f.run(ctx, tc)

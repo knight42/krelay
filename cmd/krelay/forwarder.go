@@ -133,6 +133,64 @@ func establishTunnel(ctx context.Context, tc *tailcat.Client) error {
 	}
 }
 
+// monitorPath logs whether tunnel traffic flows over a direct UDP path or is
+// relayed by DERP. Disco pings actively drive NAT traversal, so the tight
+// initial cadence also speeds up the upgrade to a direct path; once the path
+// settles, it is re-checked occasionally and only changes are logged.
+func monitorPath(ctx context.Context, tc *tailcat.Client) {
+	const (
+		upgradeInterval = 2 * time.Second
+		settledInterval = time.Minute
+		upgradeWindow   = 30 * time.Second
+	)
+	start := time.Now()
+	interval := upgradeInterval
+	var lastPath string
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		res, err := tc.DiscoPing(pingCtx)
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Debug("Disco ping failed", slog.Any("error", err))
+			timer.Reset(interval)
+			continue
+		}
+		var path, via string
+		if res.Endpoint != "" {
+			path, via = "direct", res.Endpoint
+		} else {
+			path = "derp"
+			via = fmt.Sprintf("derp-%d", res.DERPRegionID)
+			// Addresses with embedded relay details carry no real region code.
+			if code := res.DERPRegionCode; code != "" && code != fmt.Sprint(res.DERPRegionID) {
+				via = fmt.Sprintf("%s(%d)", code, res.DERPRegionID)
+			}
+		}
+		if key := path + " " + via; key != lastPath {
+			slog.Info("Tunnel path",
+				slog.String("path", path),
+				slog.String("via", via),
+				slog.Duration("latency", time.Duration(res.LatencySeconds*float64(time.Second)).Round(10*time.Microsecond)),
+			)
+			lastPath = key
+		}
+		if path == "direct" || time.Since(start) > upgradeWindow {
+			interval = settledInterval
+		}
+		timer.Reset(interval)
+	}
+}
+
 // dialTunnel opens a tunnel connection to krelay-server and completes the
 // dial handshake for dest (empty dest opens a heartbeat connection).
 func dialTunnel(ctx context.Context, tc *tailcat.Client, dest string) (net.Conn, error) {
