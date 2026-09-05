@@ -1,7 +1,7 @@
-# krelay v3
+# krelay
 
 `krelay` is a drop-in replacement for `kubectl port-forward` with enhanced
-features. v3 is a ground-up reimplementation on top of
+features. It is a ground-up reimplementation on top of
 [tailcat](https://github.com/tailscale/tailcat): traffic between your machine
 and the cluster flows over an end-to-end encrypted WireGuard tunnel
 (bootstrapped via a DERP relay, upgraded to a direct UDP path when possible)
@@ -88,7 +88,7 @@ relay details, so the client needs no extra configuration.
 | `-l, --address` | `127.0.0.1` | Local address to listen on |
 | `-f, --file` | | Targets file, one target per line (`-` for stdin) |
 | `-n, --namespace` | | Namespace of the target object |
-| `--server.image` | `ghcr.io/knight42/krelay-server:v3` | Server image |
+| `--server.image` | `ghcr.io/knight42/krelay-server:v2` | Server image |
 | `--server.namespace` | `default` | Namespace for the server Job |
 | `--server.pull-policy` | `IfNotPresent` | Image pull policy of the server pod |
 | `--derp-map-url` | `https://tailcat.dev/derpmap.json` | DERP map for the tunnel bootstrap |
