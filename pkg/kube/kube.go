@@ -132,10 +132,12 @@ func buildServerJob(opts ServerOptions) *batchv1.Job {
 		spec.HostPID = true
 		spec.Containers[0].SecurityContext = &corev1.SecurityContext{
 			Privileged: new(true),
+			RunAsUser:  new(int64(0)),
 		}
 	} else {
 		spec.SecurityContext = &corev1.PodSecurityContext{
 			RunAsNonRoot: new(true),
+			RunAsUser:    new(int64(65532)),
 		}
 		spec.Containers[0].SecurityContext = &corev1.SecurityContext{
 			ReadOnlyRootFilesystem:   new(true),
