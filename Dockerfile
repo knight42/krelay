@@ -5,6 +5,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /krelay-server ./cmd/krelay-server
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:3.21
+RUN apk add --no-cache bash util-linux-misc
 COPY --from=builder /krelay-server /krelay-server
 ENTRYPOINT ["/krelay-server"]

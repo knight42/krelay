@@ -55,10 +55,12 @@ func main() {
 		allowedClient string
 		derpMapURL    string
 		idleTimeout   time.Duration
+		enableSSH     bool
 	)
 	flag.StringVar(&allowedClient, "allowed-client", "", "Node public key of the only client allowed to connect (required).")
 	flag.StringVar(&derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to pick the bootstrap relay.")
 	flag.DurationVar(&idleTimeout, "idle-timeout", constants.DefaultIdleTimeout, "Exit after this long with no active tunnel connections.")
+	flag.BoolVar(&enableSSH, "ssh", false, "Start an SSH server on port 22 (nsenter into host namespaces).")
 	flag.Parse()
 
 	var clientKey key.NodePublic
@@ -92,14 +94,24 @@ func main() {
 	tracker := &activityTracker{}
 	tracker.lastActivity.Store(time.Now().UnixNano())
 
+	tcpPorts := []filter.PortRange{{First: constants.TunnelPort, Last: constants.TunnelPort}}
+	var sshHandler func(net.Conn)
+	if enableSSH {
+		sshHandler = newSSHHandler()
+		tcpPorts = append(tcpPorts, filter.PortRange{First: sshPort, Last: sshPort})
+	}
+
 	srv := &tailcat.Server{
 		Key:            priv,
 		PresharedKey:   psk,
 		Region:         region,
 		AllowedClients: []key.NodePublic{clientKey},
-		ServedTCPPorts: []filter.PortRange{{First: constants.TunnelPort, Last: constants.TunnelPort}},
+		ServedTCPPorts: tcpPorts,
 		ServedUDPPorts: []filter.PortRange{{First: constants.TunnelPort, Last: constants.TunnelPort}},
 		OnTCP: func(port uint16) func(net.Conn) {
+			if port == sshPort && sshHandler != nil {
+				return sshHandler
+			}
 			if port != constants.TunnelPort {
 				return nil // RST
 			}

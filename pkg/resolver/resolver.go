@@ -18,7 +18,7 @@ import (
 
 // Target identifies what to forward to.
 type Target struct {
-	Kind      string // one of ip, host, service, pod, deployment, statefulset, daemonset, replicaset, ssh
+	Kind      string // one of ip, host, service, pod, deployment, statefulset, daemonset, replicaset
 	Name      string
 	Namespace string
 }
@@ -48,7 +48,6 @@ var kindAliases = map[string]string{
 	"rs":           "replicaset",
 	"replicaset":   "replicaset",
 	"replicasets":  "replicaset",
-	"ssh":          "ssh",
 }
 
 // ParseTarget parses a TYPE/NAME string.
@@ -112,13 +111,6 @@ func Resolve(ctx context.Context, cs kubernetes.Interface, t Target) (AddrGetter
 			return nil, nil, fmt.Errorf("pod %s/%s has no IP yet", t.Namespace, t.Name)
 		}
 		return staticAddr(pod.Status.PodIP), namedContainerPorts(pod.Spec), nil
-
-	case "ssh":
-		ip, err := nodeInternalIP(ctx, cs, t.Name)
-		if err != nil {
-			return nil, nil, err
-		}
-		return staticAddr(ip), nil, nil
 
 	default:
 		selector, podSpec, err := workloadSelector(ctx, cs, t)
@@ -218,19 +210,6 @@ func (s *selectorAddr) Get(ctx context.Context) (string, error) {
 	}
 	sort.Strings(candidates)
 	return candidates[0], nil
-}
-
-func nodeInternalIP(ctx context.Context, cs kubernetes.Interface, name string) (string, error) {
-	node, err := cs.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return "", err
-	}
-	for _, addr := range node.Status.Addresses {
-		if addr.Type == corev1.NodeInternalIP {
-			return addr.Address, nil
-		}
-	}
-	return "", fmt.Errorf("node %s has no InternalIP", name)
 }
 
 func podReady(pod *corev1.Pod) bool {

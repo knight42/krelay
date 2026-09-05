@@ -2,14 +2,10 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"log/slog"
 	"net"
-	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,17 +16,20 @@ import (
 	"github.com/knight42/krelay/pkg/kube"
 )
 
-// runSSH implements `kubectl relay ssh/NODE`. It starts a krelay-server,
-// establishes the WireGuard tunnel, opens a local TCP listener on a random
-// port that forwards to nodeIP:22 through the tunnel, and execs the system
-// ssh client pointing at that local port.
-func (o *options) runSSH(ctx context.Context, target, nodeIP string, sshPort uint16, sshArgs []string) error {
+const serverSSHPort = 22
+
+// runSSH implements `kubectl relay ssh/NODE`. It creates a krelay-server Job
+// scheduled on the target node (privileged + hostPID), establishes the
+// WireGuard tunnel, and forwards a local TCP port to the server's built-in SSH
+// server. The SSH server uses nsenter to give the client a shell in the host
+// namespaces.
+func (o *options) runSSH(ctx context.Context, nodeName string) error {
 	priv := key.NewNode()
 	token := o.serverToken
 	var sj *kube.ServerJob
 	if token == "" {
 		var err error
-		sj, err = startServer(ctx, o, priv)
+		sj, err = startServer(ctx, o, priv, nodeName)
 		if err != nil {
 			return err
 		}
@@ -67,14 +66,18 @@ func (o *options) runSSH(ctx context.Context, target, nodeIP string, sshPort uin
 	go maintainHeartbeat(ctx, tc)
 	go monitorPath(ctx, tc)
 
-	// Listen on a random local port.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", net.JoinHostPort(o.address, "0"))
 	if err != nil {
-		return fmt.Errorf("listen for SSH proxy: %w", err)
+		return fmt.Errorf("listen: %w", err)
 	}
 	defer ln.Close()
-	localPort := ln.Addr().(*net.TCPAddr).Port
-	dest := net.JoinHostPort(nodeIP, strconv.Itoa(int(sshPort)))
+
+	addr := ln.Addr().(*net.TCPAddr)
+	slog.Info("SSH to node is available",
+		slog.String("node", nodeName),
+		slog.String("address", addr.String()),
+	)
+	fmt.Printf("ssh -p %d %s\n", addr.Port, addr.IP)
 
 	go func() {
 		for {
@@ -85,81 +88,42 @@ func (o *options) runSSH(ctx context.Context, target, nodeIP string, sshPort uin
 				}
 				return
 			}
-			go handleSSHProxy(ctx, tc, conn, dest)
+			go proxySSH(ctx, tc, conn)
 		}
 	}()
 
-	sshExe, err := exec.LookPath("ssh")
-	if err != nil {
-		return errors.New("ssh client not found in $PATH")
-	}
-
-	argv := []string{
-		sshExe,
-		"-o", "StrictHostKeyChecking no",
-		"-o", "UserKnownHostsFile " + os.DevNull,
-		"-o", fmt.Sprintf("HostKeyAlias %s", target),
-		"-p", strconv.Itoa(localPort),
-	}
-	argv = append(argv, sshArgs...)
-	argv = append(argv, "--", "127.0.0.1")
-
-	slog.Info("Starting SSH session", slog.String("target", target), slog.String("via", dest))
-
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		return fmt.Errorf("ssh: %w", err)
-	}
+	<-ctx.Done()
 	return nil
 }
 
-func handleSSHProxy(ctx context.Context, tc *tailcat.Client, conn net.Conn, dest string) {
+// proxySSH forwards one local TCP connection to the krelay-server's SSH port
+// through the tailcat tunnel.
+func proxySSH(ctx context.Context, tc *tailcat.Client, conn net.Conn) {
 	defer conn.Close()
-	remote, err := dialTunnel(ctx, tc, dest)
+	dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	remote, err := tc.DialTCPPort(dialCtx, serverSSHPort)
+	cancel()
 	if err != nil {
-		slog.Error("SSH tunnel dial failed", slog.String("dest", dest), slog.Any("error", err))
+		slog.Error("Dial SSH port on krelay-server failed", slog.Any("error", err))
 		return
 	}
 	tailcat.ProxyConns(conn, remote)
 }
 
-// parseSSHTarget extracts the optional user and the rest from an
+// parseSSHTarget extracts the optional user and the node name from an
 // "[user@]ssh/NODE" argument.
-func parseSSHTarget(arg string) (user, resource string, isSSH bool) {
+func parseSSHTarget(arg string) (user, nodeName string, isSSH bool) {
 	u, rest, hasUser := strings.Cut(arg, "@")
 	if !hasUser {
 		rest = u
 		u = ""
 	}
-	typ, _, ok := strings.Cut(rest, "/")
-	if !ok {
-		return u, rest, false
+	typ, name, ok := strings.Cut(rest, "/")
+	if !ok || name == "" {
+		return u, "", false
 	}
-	return u, rest, strings.EqualFold(typ, "ssh")
-}
-
-func portForSSH(portArgs []string) (uint16, error) {
-	if len(portArgs) == 0 {
-		return 22, nil
+	if !strings.EqualFold(typ, "ssh") {
+		return u, "", false
 	}
-	if len(portArgs) > 1 {
-		return 0, errors.New("ssh target accepts at most one port argument")
-	}
-	s := portArgs[0]
-	s = strings.TrimSuffix(s, "@tcp")
-	if _, remote, ok := strings.Cut(s, ":"); ok {
-		s = remote
-	}
-	p, err := strconv.ParseUint(s, 10, 16)
-	if err != nil || p == 0 {
-		return 0, fmt.Errorf("invalid SSH port %q", portArgs[0])
-	}
-	return uint16(p), nil
+	return u, name, true
 }

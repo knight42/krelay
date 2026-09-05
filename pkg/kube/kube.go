@@ -17,7 +17,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	watchtools "k8s.io/client-go/tools/watch"
-	"k8s.io/utils/ptr"
 
 	"github.com/knight42/krelay/pkg/constants"
 )
@@ -29,6 +28,9 @@ type ServerOptions struct {
 	PullPolicy string
 	// Args are passed to the krelay-server container.
 	Args []string
+	// NodeName, when non-empty, schedules the pod on this specific node with
+	// hostPID and privileged access, enabling the --ssh mode that uses nsenter.
+	NodeName string
 }
 
 // ServerJob is a handle to a running krelay-server Job.
@@ -98,7 +100,7 @@ func (sj *ServerJob) Close() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	err := sj.cs.BatchV1().Jobs(sj.Namespace).Delete(ctx, sj.Name, metav1.DeleteOptions{
-		PropagationPolicy: ptr.To(metav1.DeletePropagationBackground),
+		PropagationPolicy: new(metav1.DeletePropagationBackground),
 	})
 	if err != nil {
 		slog.Warn("Fail to remove krelay-server job", slog.String("job", sj.Name), slog.Any("error", err))
@@ -109,6 +111,36 @@ func buildServerJob(opts ServerOptions) *batchv1.Job {
 	podLabels := map[string]string{
 		"app.kubernetes.io/name": constants.ServerName,
 		"app":                    constants.ServerName,
+	}
+	spec := corev1.PodSpec{
+		RestartPolicy:                corev1.RestartPolicyNever,
+		AutomountServiceAccountToken: new(false),
+		EnableServiceLinks:           new(false),
+		Tolerations: []corev1.Toleration{
+			{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
+			{Effect: corev1.TaintEffectNoExecute, Operator: corev1.TolerationOpExists},
+		},
+		Containers: []corev1.Container{{
+			Name:            constants.ServerName,
+			Image:           opts.Image,
+			ImagePullPolicy: corev1.PullPolicy(opts.PullPolicy),
+			Args:            opts.Args,
+		}},
+	}
+	if opts.NodeName != "" {
+		spec.NodeName = opts.NodeName
+		spec.HostPID = true
+		spec.Containers[0].SecurityContext = &corev1.SecurityContext{
+			Privileged: new(true),
+		}
+	} else {
+		spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsNonRoot: new(true),
+		}
+		spec.Containers[0].SecurityContext = &corev1.SecurityContext{
+			ReadOnlyRootFilesystem:   new(true),
+			AllowPrivilegeEscalation: new(false),
+		}
 	}
 	return &batchv1.Job{
 		GenerateName: constants.ServerName + "-",
@@ -123,26 +155,7 @@ func buildServerJob(opts ServerOptions) *batchv1.Job {
 						"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
 					},
 				},
-				Spec: corev1.PodSpec{
-					RestartPolicy:                corev1.RestartPolicyNever,
-					AutomountServiceAccountToken: new(false),
-					EnableServiceLinks:           new(false),
-					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: new(true),
-					},
-					Containers: []corev1.Container{
-						{
-							Name:            constants.ServerName,
-							Image:           opts.Image,
-							ImagePullPolicy: corev1.PullPolicy(opts.PullPolicy),
-							Args:            opts.Args,
-							SecurityContext: &corev1.SecurityContext{
-								ReadOnlyRootFilesystem:   new(true),
-								AllowPrivilegeEscalation: new(false),
-							},
-						},
-					},
-				},
+				Spec: spec,
 			},
 		},
 	}

@@ -18,6 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/tailscale/tailcat"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -51,8 +52,9 @@ type options struct {
 }
 
 // startServer creates the krelay-server Job and returns the ServerJob handle.
-// The caller must Close it when done.
-func startServer(ctx context.Context, o *options, priv key.NodePrivate) (*kube.ServerJob, error) {
+// When nodeName is non-empty, the pod is scheduled on that node with hostPID
+// and privileged access for SSH mode. The caller must Close it when done.
+func startServer(ctx context.Context, o *options, priv key.NodePrivate, nodeName string) (*kube.ServerJob, error) {
 	restCfg, err := o.cf.ToRESTConfig()
 	if err != nil {
 		return nil, err
@@ -61,14 +63,19 @@ func startServer(ctx context.Context, o *options, priv key.NodePrivate) (*kube.S
 	if err != nil {
 		return nil, err
 	}
+	args := []string{
+		"--allowed-client=" + priv.Public().String(),
+		"--derp-map-url=" + o.derpMapURL,
+	}
+	if nodeName != "" {
+		args = append(args, "--ssh")
+	}
 	return kube.RunServerJob(ctx, cs, kube.ServerOptions{
 		Namespace:  o.serverNamespace,
 		Image:      o.serverImage,
 		PullPolicy: o.serverPullPolicy,
-		Args: []string{
-			"--allowed-client=" + priv.Public().String(),
-			"--derp-map-url=" + o.derpMapURL,
-		},
+		Args:       args,
+		NodeName:   nodeName,
 	})
 }
 
@@ -78,10 +85,11 @@ func (o *options) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("get namespace: %w", err)
 	}
 
-	// SSH mode: `kubectl relay ssh/NODE [ssh-args...]`
+	// SSH mode: `kubectl relay ssh/NODE`
 	if len(args) >= 1 {
-		user, resource, isSSH := parseSSHTarget(args[0])
+		_, nodeName, isSSH := parseSSHTarget(args[0])
 		if isSSH {
+			// Verify the node exists.
 			restCfg, err := o.cf.ToRESTConfig()
 			if err != nil {
 				return err
@@ -90,28 +98,10 @@ func (o *options) run(ctx context.Context, args []string) error {
 			if err != nil {
 				return err
 			}
-			t, err := resolver.ParseTarget(resource, namespace)
-			if err != nil {
-				return err
+			if _, err := cs.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{}); err != nil {
+				return fmt.Errorf("node %q: %w", nodeName, err)
 			}
-			getter, _, err := resolver.Resolve(ctx, cs, t)
-			if err != nil {
-				return fmt.Errorf("resolve %s: %w", resource, err)
-			}
-			nodeIP, err := getter.Get(ctx)
-			if err != nil {
-				return fmt.Errorf("get node IP: %w", err)
-			}
-			sshPort, err := portForSSH(args[1:])
-			if err != nil {
-				return err
-			}
-			// Remaining args after the optional port go to ssh.
-			var sshArgs []string
-			if user != "" {
-				sshArgs = append(sshArgs, "-l", user)
-			}
-			return o.runSSH(ctx, resource, nodeIP, sshPort, sshArgs)
+			return o.runSSH(ctx, nodeName)
 		}
 	}
 
@@ -194,7 +184,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 	priv := key.NewNode()
 	token := o.serverToken
 	if token == "" {
-		sj, err := startServer(ctx, o, priv)
+		sj, err := startServer(ctx, o, priv, "")
 		if err != nil {
 			return err
 		}
@@ -315,9 +305,8 @@ func example() string {
   # Forward local port 5353 to port 53 of the IP 10.96.0.10
   %[1]s ip/10.96.0.10 5353:53
 
-  # SSH into a cluster node
+  # SSH into a cluster node (prints local address to ssh into)
   %[1]s ssh/my-node-01
-  %[1]s root@ssh/my-node-01
 
   # Forward multiple targets defined in a file
   %[1]s -f targets.txt`, name)

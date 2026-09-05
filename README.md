@@ -10,8 +10,10 @@ instead of being funneled through the Kubernetes apiserver.
 ## Highlights
 
 * Forwards to `pod`, `svc`, `deploy`, `sts`, `ds`, `rs`, an in-cluster `ip`,
-  or a `host`name resolved inside the cluster. `ssh/NODE` opens an interactive
-  SSH session to a cluster node.
+  or a `host`name resolved inside the cluster.
+* `ssh/NODE` — SSH into a cluster node via nsenter (like `kubectl node-shell`
+  but over WireGuard). The server pod runs on the target node with
+  `hostPID` + privileged and enters the host namespaces.
 * Data plane bypasses the apiserver — no more SPDY/websocket streams through
   the control plane; large transfers don't load the apiserver.
 * End-to-end encrypted (WireGuard). The DERP relay only sees ciphertext and is
@@ -39,9 +41,9 @@ kubectl relay deploy/backend 5000
 # Forward a UDP port (e.g. DNS)
 kubectl relay -n kube-system svc/kube-dns 10053:53@udp
 
-# SSH into a cluster node
+# SSH into a cluster node (prints local address, then ssh into it)
 kubectl relay ssh/my-node-01
-kubectl relay root@ssh/my-node-01
+# → ssh -p 57121 127.0.0.1
 
 # Multiple targets
 kubectl relay -f targets.txt
