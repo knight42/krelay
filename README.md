@@ -12,10 +12,7 @@ instead of being funneled through the Kubernetes apiserver.
 * Forwards to `pod`, `svc`, `deploy`, `sts`, `ds`, `rs`, an in-cluster `ip`,
   or a `host`name resolved inside the cluster.
 * `ssh/NODE` — SSH into a cluster node via nsenter (like `kubectl node-shell`
-  but over WireGuard). The server pod runs on the target node with
-  `hostPID` + privileged and enters the host namespaces. SSH mode runs
-  independently from port forwarding and cannot be combined with `-f`; to
-  SSH into multiple nodes, run separate `kubectl relay ssh/NODE` processes.
+  but over WireGuard).
 * Data plane bypasses the apiserver — no more SPDY/websocket streams through
   the control plane; large transfers don't load the apiserver.
 * End-to-end encrypted (WireGuard). The DERP relay only sees ciphertext and is
@@ -23,10 +20,7 @@ instead of being funneled through the Kubernetes apiserver.
 * Forwarding to a workload survives rolling updates: each new connection
   re-resolves a ready pod.
 * Simultaneous forwarding to multiple targets (`-f targets.txt`).
-* TCP and UDP. Note: the tunnel's MTU limits UDP payloads to 1232 bytes
-  (`tailcat.MaxUDPPayload`); larger datagrams may be dropped. Replies must
-  come from the forwarded address and port — protocols that answer from an
-  ephemeral port (e.g. TFTP) are not supported.
+* TCP and UDP.
 
 ## Usage
 
@@ -99,6 +93,16 @@ relay details, so the client needs no extra configuration.
 | `--server.pull-policy` | `IfNotPresent` | Image pull policy of the server pod |
 | `--derp-map-url` | `https://tailcat.dev/derpmap.json` | DERP map for the tunnel bootstrap |
 | `-v` | `3` | Log verbosity (5 also logs tailcat internals) |
+
+## Caveats
+
+* **UDP payload size**: the tunnel's MTU limits UDP payloads to 1232 bytes
+  (`tailcat.MaxUDPPayload`); larger datagrams are dropped silently. Replies
+  must come from the forwarded address and port — protocols that answer from
+  an ephemeral port (e.g. TFTP) are not supported.
+* **SSH mode** runs independently from port forwarding and cannot be combined
+  with `-f`. To SSH into multiple nodes, run separate
+  `kubectl relay ssh/NODE` processes.
 
 ## Development
 
