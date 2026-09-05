@@ -280,7 +280,7 @@ SSH mode (ssh/NODE [LOCAL_PORT]):
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVarP(&o.address, "address", "l", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
 	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line. \"-\" reads from stdin.")
-	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v3", "The krelay-server image to use.")
+	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v2", "The krelay-server image to use.")
 	flags.StringVar(&o.serverPullPolicy, "server.pull-policy", "IfNotPresent", "Image pull policy of the krelay-server pod.")
 	flags.StringVar(&o.serverNamespace, "server.namespace", "default", "Namespace to create the krelay-server Job in.")
 	flags.StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to bootstrap the tunnel. Point this at your own DERP deployment to avoid third-party relays.")
