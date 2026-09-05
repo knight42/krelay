@@ -26,4 +26,8 @@ lint:
 
 .PHONY: server-image
 server-image:
-	docker build -t $(IMAGE) .
+	docker buildx build --platform linux/amd64 -t $(IMAGE) --load .
+
+.PHONY: push-server-image
+push-server-image:
+	docker buildx build --platform linux/amd64 -t $(IMAGE) --push .
