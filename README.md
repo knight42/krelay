@@ -13,7 +13,9 @@ instead of being funneled through the Kubernetes apiserver.
   or a `host`name resolved inside the cluster.
 * `ssh/NODE` — SSH into a cluster node via nsenter (like `kubectl node-shell`
   but over WireGuard). The server pod runs on the target node with
-  `hostPID` + privileged and enters the host namespaces.
+  `hostPID` + privileged and enters the host namespaces. SSH mode runs
+  independently from port forwarding and cannot be combined with `-f`; to
+  SSH into multiple nodes, run separate `kubectl relay ssh/NODE` processes.
 * Data plane bypasses the apiserver — no more SPDY/websocket streams through
   the control plane; large transfers don't load the apiserver.
 * End-to-end encrypted (WireGuard). The DERP relay only sees ciphertext and is
