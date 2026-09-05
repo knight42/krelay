@@ -101,7 +101,11 @@ func (o *options) run(ctx context.Context, args []string) error {
 			if _, err := cs.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{}); err != nil {
 				return fmt.Errorf("node %q: %w", nodeName, err)
 			}
-			return o.runSSH(ctx, nodeName)
+			var localPort string
+			if len(args) >= 2 {
+				localPort = args[1]
+			}
+			return o.runSSH(ctx, nodeName, localPort)
 		}
 	}
 

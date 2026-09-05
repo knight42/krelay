@@ -24,7 +24,7 @@ const serverSSHPort = 22
 // WireGuard tunnel, and forwards a local TCP port to the server's built-in SSH
 // server. The SSH server uses nsenter to give the client a shell in the host
 // namespaces.
-func (o *options) runSSH(ctx context.Context, nodeName string) error {
+func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error {
 	priv := key.NewNode()
 	token := o.serverToken
 	var sj *kube.ServerJob
@@ -67,7 +67,10 @@ func (o *options) runSSH(ctx context.Context, nodeName string) error {
 	go maintainHeartbeat(ctx, tc)
 	go monitorPath(ctx, tc)
 
-	ln, err := net.Listen("tcp", net.JoinHostPort(o.address, "0"))
+	if localPort == "" {
+		localPort = "0"
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort(o.address, localPort))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
