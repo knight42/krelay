@@ -161,6 +161,26 @@ func buildServerJob(opts ServerOptions) *batchv1.Job {
 	}
 }
 
+// unrecoverableReason inspects a Pending pod's container statuses and returns
+// a human-readable reason if the pod is stuck in a state it won't recover from.
+func unrecoverableReason(pod *corev1.Pod) string {
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Waiting == nil {
+			continue
+		}
+		switch cs.State.Waiting.Reason {
+		case "ImagePullBackOff", "ErrImagePull", "InvalidImageName",
+			"CreateContainerConfigError", "CreateContainerError":
+			msg := cs.State.Waiting.Reason
+			if cs.State.Waiting.Message != "" {
+				msg += ": " + cs.State.Waiting.Message
+			}
+			return msg
+		}
+	}
+	return ""
+}
+
 func waitForServerPod(ctx context.Context, cs kubernetes.Interface, namespace, jobName string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -190,6 +210,9 @@ func waitForServerPod(ctx context.Context, cs kubernetes.Interface, namespace, j
 		case corev1.PodFailed, corev1.PodSucceeded:
 			return false, fmt.Errorf("krelay-server pod %s terminated: %s", pod.Name, pod.Status.Phase)
 		default:
+			if reason := unrecoverableReason(pod); reason != "" {
+				return false, fmt.Errorf("krelay-server pod %s: %s", pod.Name, reason)
+			}
 			return false, nil
 		}
 	})
