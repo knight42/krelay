@@ -50,10 +50,69 @@ type options struct {
 	verbosity   int
 }
 
+// startServer creates the krelay-server Job and returns the ServerJob handle.
+// The caller must Close it when done.
+func startServer(ctx context.Context, o *options, priv key.NodePrivate) (*kube.ServerJob, error) {
+	restCfg, err := o.cf.ToRESTConfig()
+	if err != nil {
+		return nil, err
+	}
+	cs, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return nil, err
+	}
+	return kube.RunServerJob(ctx, cs, kube.ServerOptions{
+		Namespace:  o.serverNamespace,
+		Image:      o.serverImage,
+		PullPolicy: o.serverPullPolicy,
+		Args: []string{
+			"--allowed-client=" + priv.Public().String(),
+			"--derp-map-url=" + o.derpMapURL,
+		},
+	})
+}
+
 func (o *options) run(ctx context.Context, args []string) error {
 	namespace, _, err := o.cf.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return fmt.Errorf("get namespace: %w", err)
+	}
+
+	// SSH mode: `kubectl relay ssh/NODE [ssh-args...]`
+	if len(args) >= 1 {
+		user, resource, isSSH := parseSSHTarget(args[0])
+		if isSSH {
+			restCfg, err := o.cf.ToRESTConfig()
+			if err != nil {
+				return err
+			}
+			cs, err := kubernetes.NewForConfig(restCfg)
+			if err != nil {
+				return err
+			}
+			t, err := resolver.ParseTarget(resource, namespace)
+			if err != nil {
+				return err
+			}
+			getter, _, err := resolver.Resolve(ctx, cs, t)
+			if err != nil {
+				return fmt.Errorf("resolve %s: %w", resource, err)
+			}
+			nodeIP, err := getter.Get(ctx)
+			if err != nil {
+				return fmt.Errorf("get node IP: %w", err)
+			}
+			sshPort, err := portForSSH(args[1:])
+			if err != nil {
+				return err
+			}
+			// Remaining args after the optional port go to ssh.
+			var sshArgs []string
+			if user != "" {
+				sshArgs = append(sshArgs, "-l", user)
+			}
+			return o.runSSH(ctx, resource, nodeIP, sshPort, sshArgs)
+		}
 	}
 
 	var specs []targetSpec
@@ -135,15 +194,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 	priv := key.NewNode()
 	token := o.serverToken
 	if token == "" {
-		sj, err := kube.RunServerJob(ctx, cs, kube.ServerOptions{
-			Namespace:  o.serverNamespace,
-			Image:      o.serverImage,
-			PullPolicy: o.serverPullPolicy,
-			Args: []string{
-				"--allowed-client=" + priv.Public().String(),
-				"--derp-map-url=" + o.derpMapURL,
-			},
-		})
+		sj, err := startServer(ctx, o, priv)
 		if err != nil {
 			return err
 		}
@@ -263,6 +314,10 @@ func example() string {
 
   # Forward local port 5353 to port 53 of the IP 10.96.0.10
   %[1]s ip/10.96.0.10 5353:53
+
+  # SSH into a cluster node
+  %[1]s ssh/my-node-01
+  %[1]s root@ssh/my-node-01
 
   # Forward multiple targets defined in a file
   %[1]s -f targets.txt`, name)
