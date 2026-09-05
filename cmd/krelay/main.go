@@ -242,10 +242,17 @@ func main() {
 
 	c := cobra.Command{
 		Use: fmt.Sprintf("%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT [...[LOCAL_PORT_N:]REMOTE_PORT_N]", programName()),
-		Long: `Forward local TCP ports to a pod, service, workload, IP or hostname reachable
-from inside the cluster. Traffic flows over an end-to-end encrypted tailcat
-(WireGuard) tunnel between this machine and a short-lived krelay-server pod,
-instead of through the Kubernetes apiserver.`,
+		Long: `Forward local TCP/UDP ports to a pod, service, workload, IP or hostname
+reachable from inside the cluster, or SSH into a cluster node.
+
+Traffic flows over an end-to-end encrypted tailcat (WireGuard) tunnel
+between this machine and a short-lived krelay-server pod, instead of
+through the Kubernetes apiserver.
+
+SSH mode (ssh/NODE [LOCAL_PORT]):
+  Creates a privileged pod on the target node and uses nsenter to give
+  you a root shell in the host namespaces — like kubectl node-shell,
+  but over WireGuard. Prints a local address you can ssh into.`,
 		Example: example(),
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -311,6 +318,9 @@ func example() string {
 
   # SSH into a cluster node (prints local address to ssh into)
   %[1]s ssh/my-node-01
+
+  # SSH, listening on a specific local port
+  %[1]s ssh/my-node-01 2222
 
   # Forward multiple targets defined in a file
   %[1]s -f targets.txt`, name)
