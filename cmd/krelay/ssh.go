@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -73,11 +74,7 @@ func (o *options) runSSH(ctx context.Context, nodeName string) error {
 	defer ln.Close()
 
 	addr := ln.Addr().(*net.TCPAddr)
-	slog.Info("SSH to node is available",
-		slog.String("node", nodeName),
-		slog.String("address", addr.String()),
-	)
-	fmt.Printf("ssh -p %d %s\n", addr.Port, addr.IP)
+	fmt.Fprintf(os.Stderr, "\n  To connect, run:\n\n    ssh -p %d %s\n\n", addr.Port, addr.IP)
 
 	go func() {
 		for {
