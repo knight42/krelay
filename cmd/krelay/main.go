@@ -6,7 +6,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log"
@@ -257,11 +257,16 @@ SSH mode (ssh/NODE [LOCAL_PORT]):
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printVersion {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+				err := json.MarshalWrite(cmd.OutOrStdout(), struct {
 					Version   string
 					Commit    string
 					BuildDate string
 				}{version, commit, date})
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Fprintln(cmd.OutOrStdout())
+				return err
 			}
 			slog.SetLogLoggerLevel(logLevel(o.verbosity))
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

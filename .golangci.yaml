@@ -2,12 +2,19 @@ version: "2"
 
 linters:
   enable:
+    - depguard
     - modernize
     - revive
     - misspell
     - unconvert
     - unparam
   settings:
+    depguard:
+      rules:
+        jsonv2:
+          deny:
+            - pkg: encoding/json$
+              desc: use encoding/json/v2 instead
     errcheck:
       exclude-functions:
         - (io.Closer).Close
