@@ -81,6 +81,14 @@ kubectl relay --derp-map-url=https://derp.example.com/derpmap.json svc/nginx 808
 The URL is only fetched by the server pod; the connection token embeds the
 relay details, so the client needs no extra configuration.
 
+A `file://` URL is also accepted. The file is read on the client machine and
+its contents are passed to the server pod inline, so the pod never fetches
+anything:
+
+```bash
+kubectl relay --derp-map-url=file:///etc/krelay/derpmap.json svc/nginx 8080:80
+```
+
 ## Flags
 
 | Flag | Default | Description |
@@ -91,7 +99,7 @@ relay details, so the client needs no extra configuration.
 | `--server.image` | `ghcr.io/knight42/krelay-server:v2` | Server image |
 | `--server.namespace` | `default` | Namespace for the server Job |
 | `--server.pull-policy` | `IfNotPresent` | Image pull policy of the server pod |
-| `--derp-map-url` | `https://tailcat.dev/derpmap.json` | DERP map for the tunnel bootstrap |
+| `--derp-map-url` | `https://tailcat.dev/derpmap.json` | DERP map for the tunnel bootstrap (`file://` reads a local file) |
 | `-v` | `3` | Log verbosity (5 also logs tailcat internals) |
 
 ## Caveats
