@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -22,6 +24,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
 	"tailscale.com/types/logger"
 
@@ -51,6 +54,34 @@ type options struct {
 	verbosity   int
 }
 
+// derpMapArg returns the krelay-server flag conveying the DERP map choice.
+// A file:// URL names a file on this machine, which the server pod cannot
+// read, so its contents are validated and passed inline instead of the URL.
+func derpMapArg(derpMapURL string) (string, error) {
+	path, ok := strings.CutPrefix(derpMapURL, "file://")
+	if !ok {
+		return "--derp-map-url=" + derpMapURL, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read DERP map %s: %w", derpMapURL, err)
+	}
+	// Validate here: a bad map would otherwise only surface as a server
+	// pod crash after the Job is created.
+	var dm tailcfg.DERPMap
+	if err := json.Unmarshal(data, &dm); err != nil {
+		return "", fmt.Errorf("invalid DERP map JSON in %s: %w", path, err)
+	}
+	if len(dm.Regions) == 0 {
+		return "", fmt.Errorf("DERP map %s has no regions", path)
+	}
+	compact := jsontext.Value(data)
+	if err := compact.Compact(); err != nil {
+		return "", fmt.Errorf("invalid DERP map JSON in %s: %w", path, err)
+	}
+	return "--derp-map-json=" + string(compact), nil
+}
+
 // startServer creates the krelay-server Job and returns the ServerJob handle.
 // When nodeName is non-empty, the pod is scheduled on that node with hostPID
 // and privileged access for SSH mode. The caller must Close it when done.
@@ -63,9 +94,13 @@ func startServer(ctx context.Context, o *options, priv key.NodePrivate, nodeName
 	if err != nil {
 		return nil, err
 	}
+	derpArg, err := derpMapArg(o.derpMapURL)
+	if err != nil {
+		return nil, err
+	}
 	args := []string{
 		"--allowed-client=" + priv.Public().String(),
-		"--derp-map-url=" + o.derpMapURL,
+		derpArg,
 	}
 	if nodeName != "" {
 		args = append(args, "--ssh")
@@ -288,7 +323,7 @@ SSH mode (ssh/NODE [LOCAL_PORT]):
 	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v2", "The krelay-server image to use.")
 	flags.StringVar(&o.serverPullPolicy, "server.pull-policy", "IfNotPresent", "Image pull policy of the krelay-server pod.")
 	flags.StringVar(&o.serverNamespace, "server.namespace", "default", "Namespace to create the krelay-server Job in.")
-	flags.StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to bootstrap the tunnel. Point this at your own DERP deployment to avoid third-party relays.")
+	flags.StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to bootstrap the tunnel. Point this at your own DERP deployment to avoid third-party relays. A file:// URL is read locally and its contents are sent to the server pod.")
 	flags.StringVar(&o.serverToken, "server-token", "", "Connect to an existing krelay-server using this token instead of creating one.")
 	_ = flags.MarkHidden("server-token")
 	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")

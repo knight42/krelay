@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"log"
@@ -54,11 +55,13 @@ func main() {
 	var (
 		allowedClient string
 		derpMapURL    string
+		derpMapJSON   string
 		idleTimeout   time.Duration
 		enableSSH     bool
 	)
 	flag.StringVar(&allowedClient, "allowed-client", "", "Node public key of the only client allowed to connect (required).")
 	flag.StringVar(&derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to pick the bootstrap relay.")
+	flag.StringVar(&derpMapJSON, "derp-map-json", "", "JSON-encoded DERP map to use instead of fetching --derp-map-url.")
 	flag.DurationVar(&idleTimeout, "idle-timeout", constants.DefaultIdleTimeout, "Exit after this long with no active tunnel connections.")
 	flag.BoolVar(&enableSSH, "ssh", false, "Start an SSH server on port 22 (nsenter into host namespaces).")
 	flag.Parse()
@@ -73,8 +76,20 @@ func main() {
 	// Pick the nearest DERP region and embed its full details in the token,
 	// so the client never needs to fetch the DERP map. This keeps self-hosted
 	// DERP setups to a single --derp-map-url flag on the client.
+	expandOpts := []any{tailcat.ExpandForServer}
+	if derpMapJSON != "" {
+		// The client read a file:// DERP map on its side and passed the
+		// contents inline; this pod has no access to that file.
+		dm := new(tailcfg.DERPMap)
+		if err := json.Unmarshal([]byte(derpMapJSON), dm); err != nil {
+			log.Fatalf("invalid --derp-map-json: %v", err)
+		}
+		expandOpts = append(expandOpts, dm)
+	} else {
+		expandOpts = append(expandOpts, tailcat.DERPMapURL(derpMapURL))
+	}
 	pick := &tailcat.ConnInfo{RegionID: -1}
-	if err := pick.Expand(context.Background(), tailcat.ExpandForServer, tailcat.DERPMapURL(derpMapURL)); err != nil {
+	if err := pick.Expand(context.Background(), expandOpts...); err != nil {
 		log.Fatalf("pick DERP region: %v", err)
 	}
 	region := pick.Region[0]
