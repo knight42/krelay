@@ -24,10 +24,11 @@ func TestDERPRegionResolverLabel(t *testing.T) {
 			}
 		}
 	}`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, derpMap)
 	}))
-	defer srv.Close()
+	// The in-memory server's URL is only set once Client is first called.
+	client := srv.Client()
 	mapPath := filepath.Join(t.TempDir(), "derpmap.json")
 	if err := os.WriteFile(mapPath, []byte(derpMap), 0o600); err != nil {
 		t.Fatal(err)
@@ -52,7 +53,7 @@ func TestDERPRegionResolverLabel(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			r := startDERPRegionResolver(context.Background(), tt.url)
+			r := startDERPRegionResolver(context.Background(), client, tt.url)
 			if got := r.label(context.Background(), tt.addr); got != tt.want {
 				t.Errorf("label() = %q, want %q", got, tt.want)
 			}

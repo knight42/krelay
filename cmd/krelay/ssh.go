@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ const serverSSHPort = 22
 func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error {
 	// Start loading the DERP map now so the region code is usually ready,
 	// at no extra latency, by the time the tunnel logs mention the region.
-	regions := startDERPRegionResolver(ctx, o.derpMapURL)
+	regions := startDERPRegionResolver(ctx, http.DefaultClient, o.derpMapURL)
 
 	priv := key.NewNode()
 	token := o.serverToken

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -222,7 +223,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 
 	// Start loading the DERP map now so the region code is usually ready,
 	// at no extra latency, by the time the tunnel logs mention the region.
-	regions := startDERPRegionResolver(ctx, o.derpMapURL)
+	regions := startDERPRegionResolver(ctx, http.DefaultClient, o.derpMapURL)
 
 	priv := key.NewNode()
 	token := o.serverToken

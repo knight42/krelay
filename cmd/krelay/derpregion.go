@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -25,13 +26,13 @@ type derpRegionResolver struct {
 }
 
 // startDERPRegionResolver starts loading the DERP map at derpMapURL.
-func startDERPRegionResolver(ctx context.Context, derpMapURL string) *derpRegionResolver {
+func startDERPRegionResolver(ctx context.Context, client *http.Client, derpMapURL string) *derpRegionResolver {
 	r := &derpRegionResolver{done: make(chan struct{})}
 	go func() {
 		defer close(r.done)
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		dm, err := loadDERPMap(ctx, derpMapURL)
+		dm, err := loadDERPMap(ctx, client, derpMapURL)
 		if err != nil {
 			slog.Debug("Fail to load DERP map for region codes", slog.Any("error", err))
 			return
@@ -80,19 +81,36 @@ func (r *derpRegionResolver) label(ctx context.Context, addr tailcat.Addr) strin
 	return addrDERPRegion(addr)
 }
 
-// loadDERPMap reads a file:// DERP map locally and fetches any other URL.
-func loadDERPMap(ctx context.Context, derpMapURL string) (*tailcfg.DERPMap, error) {
-	path, ok := strings.CutPrefix(derpMapURL, "file://")
-	if !ok {
-		return tailcat.FetchDERPMap(ctx, tailcat.DERPMapURL(derpMapURL))
+// loadDERPMap reads a file:// DERP map locally and fetches any other URL with
+// client. The fetch is hand-rolled because tailcat.FetchDERPMap hard-codes
+// http.DefaultClient.
+func loadDERPMap(ctx context.Context, client *http.Client, derpMapURL string) (*tailcfg.DERPMap, error) {
+	if path, ok := strings.CutPrefix(derpMapURL, "file://"); ok {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		dm := new(tailcfg.DERPMap)
+		if err := json.Unmarshal(data, dm); err != nil {
+			return nil, fmt.Errorf("invalid DERP map JSON in %s: %w", path, err)
+		}
+		return dm, nil
 	}
-	data, err := os.ReadFile(path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, derpMapURL, nil)
 	if err != nil {
 		return nil, err
 	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch DERP map %s: %s", derpMapURL, resp.Status)
+	}
 	dm := new(tailcfg.DERPMap)
-	if err := json.Unmarshal(data, dm); err != nil {
-		return nil, fmt.Errorf("invalid DERP map JSON in %s: %w", path, err)
+	if err := json.NewDecoder(resp.Body).Decode(dm); err != nil {
+		return nil, fmt.Errorf("invalid DERP map JSON from %s: %w", derpMapURL, err)
 	}
 	return dm, nil
 }
