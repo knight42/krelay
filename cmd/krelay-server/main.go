@@ -93,7 +93,7 @@ func main() {
 		log.Fatalf("pick DERP region: %v", err)
 	}
 	region := pick.Region[0]
-	log.Printf("selected DERP region %d (%s)", region.RegionID, region.RegionName)
+	log.Printf("selected DERP region %s(%d) %s", region.RegionCode, region.RegionID, region.RegionName)
 
 	// The pre-shared key is mixed into every WireGuard handshake; the server
 	// and the address handed to the client must carry the same one.

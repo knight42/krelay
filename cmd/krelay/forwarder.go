@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tailscale/tailcat"
+	"tailscale.com/tailcfg"
 
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/ports"
@@ -116,6 +117,7 @@ func establishTunnel(ctx context.Context, tc *tailcat.Client) error {
 		res, err := tc.Ping(ctx)
 		if err == nil {
 			slog.Info("Tunnel established",
+				slog.String("derpRegion", addrDERPRegion(tc.Server)),
 				slog.Duration("derpLatency", res.Latency),
 				slog.Int("attempt", attempt),
 			)
@@ -170,10 +172,9 @@ func monitorPath(ctx context.Context, tc *tailcat.Client) {
 			path, via = "direct", res.Endpoint
 		} else {
 			path = "derp"
-			via = fmt.Sprintf("derp-%d", res.DERPRegionID)
-			// Addresses with embedded relay details carry no real region code.
-			if code := res.DERPRegionCode; code != "" && code != fmt.Sprint(res.DERPRegionID) {
-				via = fmt.Sprintf("%s(%d)", code, res.DERPRegionID)
+			via = derpRegionLabel(res.DERPRegionCode, res.DERPRegionID)
+			if via == "" {
+				via = addrDERPRegion(tc.Server)
 			}
 		}
 		if key := path + " " + via; key != lastPath {
@@ -189,6 +190,40 @@ func monitorPath(ctx context.Context, tc *tailcat.Client) {
 		}
 		timer.Reset(interval)
 	}
+}
+
+// derpRegionLabel formats a DERP region as "code(id)", e.g. "sfo(2)", or ""
+// when the code is missing or synthesized: tailcat addresses strip the real
+// region code to stay compact, and ParseAddr fills in the ID as the code.
+func derpRegionLabel(code string, id tailcfg.DERPRegionID) string {
+	if code != "" && code != fmt.Sprint(id) {
+		return fmt.Sprintf("%s(%d)", code, id)
+	}
+	return ""
+}
+
+// addrDERPRegion returns a label for the DERP region a tailcat address points
+// at. The real region code doesn't survive the compact address encoding, but
+// the relay hostname does and identifies the region just as well.
+func addrDERPRegion(addr tailcat.Addr) string {
+	ci, err := tailcat.ParseAddr(addr)
+	if err != nil {
+		return "unknown"
+	}
+	if len(ci.Region) > 0 {
+		r := ci.Region[0]
+		if l := derpRegionLabel(r.RegionCode, r.RegionID); l != "" {
+			return l
+		}
+		if len(r.Nodes) > 0 && r.Nodes[0].HostName != "" {
+			return r.Nodes[0].HostName
+		}
+		return fmt.Sprintf("derp-%d", r.RegionID)
+	}
+	if ci.RegionID > 0 {
+		return fmt.Sprintf("derp-%d", ci.RegionID)
+	}
+	return "unknown"
 }
 
 // dialTunnel opens a tunnel connection to krelay-server and completes the
