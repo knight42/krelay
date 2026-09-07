@@ -220,6 +220,10 @@ func (o *options) run(ctx context.Context, args []string) error {
 		}
 	}
 
+	// Start loading the DERP map now so the region code is usually ready,
+	// at no extra latency, by the time the tunnel logs mention the region.
+	regions := startDERPRegionResolver(ctx, o.derpMapURL)
+
 	priv := key.NewNode()
 	token := o.serverToken
 	if token == "" {
@@ -251,14 +255,14 @@ func (o *options) run(ctx context.Context, args []string) error {
 
 	slog.Info("Establishing tunnel to krelay-server")
 	establishCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	err = establishTunnel(establishCtx, tc)
+	err = establishTunnel(establishCtx, tc, regions)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("establish tunnel: %w", err)
 	}
 
 	go maintainHeartbeat(ctx, tc)
-	go monitorPath(ctx, tc)
+	go monitorPath(ctx, tc, regions)
 	for _, f := range fwds {
 		if f.bound() {
 			go f.run(ctx, tc)

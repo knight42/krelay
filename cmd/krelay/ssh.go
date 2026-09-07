@@ -25,6 +25,10 @@ const serverSSHPort = 22
 // server. The SSH server uses nsenter to give the client a shell in the host
 // namespaces.
 func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error {
+	// Start loading the DERP map now so the region code is usually ready,
+	// at no extra latency, by the time the tunnel logs mention the region.
+	regions := startDERPRegionResolver(ctx, o.derpMapURL)
+
 	priv := key.NewNode()
 	token := o.serverToken
 	var sj *kube.ServerJob
@@ -58,14 +62,14 @@ func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error 
 
 	slog.Info("Establishing tunnel to krelay-server")
 	establishCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	err := establishTunnel(establishCtx, tc)
+	err := establishTunnel(establishCtx, tc, regions)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("establish tunnel: %w", err)
 	}
 
 	go maintainHeartbeat(ctx, tc)
-	go monitorPath(ctx, tc)
+	go monitorPath(ctx, tc, regions)
 
 	if localPort == "" {
 		localPort = "0"

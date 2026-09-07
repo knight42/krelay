@@ -112,12 +112,12 @@ func (f *forwarder) handleConn(ctx context.Context, tc *tailcat.Client, conn net
 // DERP registration completes. The outer loop retries whole windows, bounded
 // by ctx, for failures a single window can't ride out (e.g. transient
 // network trouble on either side).
-func establishTunnel(ctx context.Context, tc *tailcat.Client) error {
+func establishTunnel(ctx context.Context, tc *tailcat.Client, regions *derpRegionResolver) error {
 	for attempt := 1; ; attempt++ {
 		res, err := tc.Ping(ctx)
 		if err == nil {
 			slog.Info("Tunnel established",
-				slog.String("derpRegion", addrDERPRegion(tc.Server)),
+				slog.String("derpRegion", regions.label(ctx, tc.Server)),
 				slog.Duration("derpLatency", res.Latency),
 				slog.Int("attempt", attempt),
 			)
@@ -139,7 +139,7 @@ func establishTunnel(ctx context.Context, tc *tailcat.Client) error {
 // relayed by DERP. Disco pings actively drive NAT traversal, so the tight
 // initial cadence also speeds up the upgrade to a direct path; once the path
 // settles, it is re-checked occasionally and only changes are logged.
-func monitorPath(ctx context.Context, tc *tailcat.Client) {
+func monitorPath(ctx context.Context, tc *tailcat.Client, regions *derpRegionResolver) {
 	const (
 		upgradeInterval = 2 * time.Second
 		settledInterval = time.Minute
@@ -174,7 +174,7 @@ func monitorPath(ctx context.Context, tc *tailcat.Client) {
 			path = "derp"
 			via = derpRegionLabel(res.DERPRegionCode, res.DERPRegionID)
 			if via == "" {
-				via = addrDERPRegion(tc.Server)
+				via = regions.label(ctx, tc.Server)
 			}
 		}
 		if key := path + " " + via; key != lastPath {
