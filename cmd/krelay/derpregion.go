@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -109,7 +109,7 @@ func loadDERPMap(ctx context.Context, client *http.Client, derpMapURL string) (*
 		return nil, fmt.Errorf("fetch DERP map %s: %s", derpMapURL, resp.Status)
 	}
 	dm := new(tailcfg.DERPMap)
-	if err := json.NewDecoder(resp.Body).Decode(dm); err != nil {
+	if err := json.UnmarshalRead(resp.Body, dm); err != nil {
 		return nil, fmt.Errorf("invalid DERP map JSON from %s: %w", derpMapURL, err)
 	}
 	return dm, nil
