@@ -52,7 +52,10 @@ type options struct {
 	// serverToken, if set, skips creating the server Job and connects to an
 	// already-running krelay-server. Intended for development and testing.
 	serverToken string
-	verbosity   int
+	// sshListen switches SSH mode from opening a shell directly to
+	// forwarding a local TCP port for an external ssh client.
+	sshListen bool
+	verbosity int
 }
 
 // derpMapArg returns the krelay-server flag conveying the DERP map choice.
@@ -123,7 +126,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 
 	// SSH mode: `kubectl relay ssh/NODE`
 	if len(args) >= 1 {
-		_, nodeName, isSSH := parseSSHTarget(args[0])
+		nodeName, isSSH := parseSSHTarget(args[0])
 		if isSSH {
 			// Verify the node exists.
 			restCfg, err := o.cf.ToRESTConfig()
@@ -263,7 +266,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 	}
 
 	go maintainHeartbeat(ctx, tc)
-	go monitorPath(ctx, tc, regions)
+	go monitorPath(ctx, tc, regions, false)
 	for _, f := range fwds {
 		if f.bound() {
 			go f.run(ctx, tc)
@@ -292,7 +295,9 @@ through the Kubernetes apiserver.
 SSH mode (ssh/NODE [LOCAL_PORT]):
   Creates a privileged pod on the target node and uses nsenter to give
   you a root shell in the host namespaces — like kubectl node-shell,
-  but over WireGuard. Prints a local address you can ssh into.`,
+  but over WireGuard. Opens the shell directly; with --listen or a
+  LOCAL_PORT argument, it instead listens on a local port and prints
+  an address for the ssh client of your choice.`,
 		Example: example(),
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -331,6 +336,7 @@ SSH mode (ssh/NODE [LOCAL_PORT]):
 	flags.StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to bootstrap the tunnel. Point this at your own DERP deployment to avoid third-party relays. A file:// URL is read locally and its contents are sent to the server pod.")
 	flags.StringVar(&o.serverToken, "server-token", "", "Connect to an existing krelay-server using this token instead of creating one.")
 	_ = flags.MarkHidden("server-token")
+	flags.BoolVar(&o.sshListen, "listen", false, "SSH mode: instead of opening a shell on the node, listen on a local TCP port (the LOCAL_PORT argument, or an ephemeral port) and print the address to connect to with ssh.")
 	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")
 
 	if c.Execute() != nil {
@@ -361,10 +367,10 @@ func example() string {
   # Forward local port 5353 to port 53 of the IP 10.96.0.10
   %[1]s ip/10.96.0.10 5353:53
 
-  # SSH into a cluster node (prints local address to ssh into)
+  # Open a root shell on a cluster node
   %[1]s ssh/my-node-01
 
-  # SSH, listening on a specific local port
+  # Instead of a shell, listen on local port 2222 for your own ssh client
   %[1]s ssh/my-node-01 2222
 
   # Forward multiple targets defined in a file

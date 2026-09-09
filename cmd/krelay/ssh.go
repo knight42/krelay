@@ -2,16 +2,22 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tailscale/tailcat"
+	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 	"tailscale.com/types/key"
 	"tailscale.com/types/logger"
 
@@ -21,10 +27,11 @@ import (
 const serverSSHPort = 22
 
 // runSSH implements `kubectl relay ssh/NODE`. It creates a krelay-server Job
-// scheduled on the target node (privileged + hostPID), establishes the
-// WireGuard tunnel, and forwards a local TCP port to the server's built-in SSH
-// server. The SSH server uses nsenter to give the client a shell in the host
-// namespaces.
+// scheduled on the target node (privileged + hostPID) and establishes the
+// WireGuard tunnel to the server's built-in SSH server, which uses nsenter to
+// give the client a shell in the host namespaces. By default it opens that
+// shell directly on the local terminal; with --listen (or a LOCAL_PORT
+// argument) it instead forwards a local TCP port for an external ssh client.
 func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error {
 	// Start loading the DERP map now so the region code is usually ready,
 	// at no extra latency, by the time the tunnel logs mention the region.
@@ -69,8 +76,15 @@ func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error 
 		return fmt.Errorf("establish tunnel: %w", err)
 	}
 
+	listen := o.sshListen || localPort != ""
+
 	go maintainHeartbeat(ctx, tc)
-	go monitorPath(ctx, tc, regions)
+	// In direct-shell mode the terminal is in raw mode, so demote path logs.
+	go monitorPath(ctx, tc, regions, !listen)
+
+	if !listen {
+		return runSSHShell(ctx, tc)
+	}
 
 	if localPort == "" {
 		localPort = "0"
@@ -115,20 +129,111 @@ func proxySSH(ctx context.Context, tc *tailcat.Client, conn net.Conn) {
 	tailcat.ProxyConns(conn, remote)
 }
 
-// parseSSHTarget extracts the optional user and the node name from an
-// "[user@]ssh/NODE" argument.
-func parseSSHTarget(arg string) (user, nodeName string, isSSH bool) {
-	u, rest, hasUser := strings.Cut(arg, "@")
-	if !hasUser {
-		rest = u
-		u = ""
+// runSSHShell opens an interactive shell on the node using an in-process SSH
+// client over the tunnel. Host key verification is deliberately skipped: the
+// transport is already end-to-end encrypted and keyed to this client, and the
+// server generates a fresh host key on every run and accepts any client, so
+// the SSH layer carries no trust of its own.
+func runSSHShell(ctx context.Context, tc *tailcat.Client) error {
+	dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	conn, err := tc.DialTCPPort(dialCtx, serverSSHPort)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("dial SSH port on krelay-server: %w", err)
 	}
-	typ, name, ok := strings.Cut(rest, "/")
+	defer conn.Close()
+
+	// The username is ignored by the server (nsenter always lands in the
+	// host namespaces as root).
+	cc, chans, reqs, err := gossh.NewClientConn(conn, "krelay-server", &gossh.ClientConfig{
+		User:            "root",
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		return fmt.Errorf("SSH handshake: %w", err)
+	}
+	client := gossh.NewClient(cc, chans, reqs)
+	defer client.Close()
+
+	sess, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("open SSH session: %w", err)
+	}
+	defer sess.Close()
+
+	// Stdin goes through a pipe instead of sess.Stdin: the session's own
+	// stdin copier is waited on by sess.Wait, which would then block on a
+	// pending os.Stdin read after the remote shell exits.
+	stdin, err := sess.StdinPipe()
+	if err != nil {
+		return err
+	}
+	go func() {
+		_, _ = io.Copy(stdin, os.Stdin)
+		_ = stdin.Close()
+	}()
+	sess.Stdout = os.Stdout
+	sess.Stderr = os.Stderr
+
+	if fd := int(os.Stdin.Fd()); term.IsTerminal(fd) {
+		oldState, err := term.MakeRaw(fd)
+		if err != nil {
+			return fmt.Errorf("set raw terminal: %w", err)
+		}
+		defer term.Restore(fd, oldState) //nolint:errcheck
+
+		width, height, err := term.GetSize(fd)
+		if err != nil {
+			width, height = 80, 24
+		}
+		termType := os.Getenv("TERM")
+		if termType == "" {
+			termType = "xterm"
+		}
+		// The server ignores terminal modes (it applies the pty defaults).
+		if err := sess.RequestPty(termType, height, width, gossh.TerminalModes{}); err != nil {
+			return fmt.Errorf("request pty: %w", err)
+		}
+
+		winch := make(chan os.Signal, 1)
+		signal.Notify(winch, syscall.SIGWINCH)
+		defer signal.Stop(winch)
+		go func() {
+			for range winch {
+				if w, h, err := term.GetSize(fd); err == nil {
+					_ = sess.WindowChange(h, w)
+				}
+			}
+		}()
+	}
+
+	if err := sess.Shell(); err != nil {
+		return fmt.Errorf("start remote shell: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- sess.Wait() }()
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-done:
+		var exitErr *gossh.ExitError
+		if err == nil || errors.As(err, &exitErr) {
+			// The shell's own exit status is not a krelay failure.
+			return nil
+		}
+		return fmt.Errorf("SSH session: %w", err)
+	}
+}
+
+// parseSSHTarget extracts the node name from an "ssh/NODE" argument.
+func parseSSHTarget(arg string) (nodeName string, isSSH bool) {
+	typ, name, ok := strings.Cut(arg, "/")
 	if !ok || name == "" {
-		return u, "", false
+		return "", false
 	}
 	if !strings.EqualFold(typ, "ssh") {
-		return u, "", false
+		return "", false
 	}
-	return u, name, true
+	return name, true
 }

@@ -22,6 +22,8 @@ linters:
         - (net.Listener).Close
         - (*os.File).Close
         - (*github.com/tailscale/tailcat.Client).Close
+        - (golang.org/x/crypto/ssh.Conn).Close
+        - (*golang.org/x/crypto/ssh.Session).Close
 
 formatters:
   enable:

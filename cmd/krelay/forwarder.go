@@ -138,13 +138,19 @@ func establishTunnel(ctx context.Context, tc *tailcat.Client, regions *derpRegio
 // monitorPath logs whether tunnel traffic flows over a direct UDP path or is
 // relayed by DERP. Disco pings actively drive NAT traversal, so the tight
 // initial cadence also speeds up the upgrade to a direct path; once the path
-// settles, it is re-checked occasionally and only changes are logged.
-func monitorPath(ctx context.Context, tc *tailcat.Client, regions *derpRegionResolver) {
+// settles, it is re-checked occasionally and only changes are logged. With
+// quiet, path changes are logged at debug level — used while an interactive
+// SSH session owns the terminal in raw mode.
+func monitorPath(ctx context.Context, tc *tailcat.Client, regions *derpRegionResolver, quiet bool) {
 	const (
 		upgradeInterval = 2 * time.Second
 		settledInterval = time.Minute
 		upgradeWindow   = 30 * time.Second
 	)
+	logPath := slog.Info
+	if quiet {
+		logPath = slog.Debug
+	}
 	start := time.Now()
 	interval := upgradeInterval
 	var lastPath string
@@ -178,7 +184,7 @@ func monitorPath(ctx context.Context, tc *tailcat.Client, regions *derpRegionRes
 			}
 		}
 		if key := path + " " + via; key != lastPath {
-			slog.Info("Tunnel path",
+			logPath("Tunnel path",
 				slog.String("path", path),
 				slog.String("via", via),
 				slog.Duration("latency", time.Duration(res.LatencySeconds*float64(time.Second)).Round(10*time.Microsecond)),
