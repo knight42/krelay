@@ -11,8 +11,8 @@ instead of being funneled through the Kubernetes apiserver.
 
 * Forwards to `pod`, `svc`, `deploy`, `sts`, `ds`, `rs`, an in-cluster `ip`,
   or a `host`name resolved inside the cluster.
-* `ssh/NODE` — SSH into a cluster node via nsenter (like `kubectl node-shell`
-  but over WireGuard).
+* `ssh/NODE` — opens a root shell on a cluster node via nsenter (like
+  `kubectl node-shell` but over WireGuard).
 * Data plane bypasses the apiserver — no more SPDY/websocket streams through
   the control plane; large transfers don't load the apiserver.
 * End-to-end encrypted (WireGuard). The DERP relay only sees ciphertext and is
@@ -37,9 +37,12 @@ kubectl relay deploy/backend 5000
 # Forward a UDP port (e.g. DNS)
 kubectl relay -n kube-system svc/kube-dns 10053:53@udp
 
-# SSH into a cluster node (prints local address, then ssh into it)
+# Open a root shell on a cluster node
 kubectl relay ssh/my-node-01
-# → ssh -p 57121 127.0.0.1
+
+# Instead of a shell, listen on a local port for your own ssh client
+kubectl relay ssh/my-node-01 2222   # or --listen for an ephemeral port
+# → ssh -p 2222 127.0.0.1
 
 # Multiple targets
 kubectl relay -f targets.txt
@@ -100,6 +103,7 @@ kubectl relay --derp-map-url=file:///etc/krelay/derpmap.json svc/nginx 8080:80
 | `--server.namespace` | `default` | Namespace for the server Job |
 | `--server.pull-policy` | `IfNotPresent` | Image pull policy of the server pod |
 | `--derp-map-url` | `https://tailcat.dev/derpmap.json` | DERP map for the tunnel bootstrap (`file://` reads a local file) |
+| `--listen` | `false` | SSH mode: listen on a local port instead of opening a shell |
 | `-v` | `3` | Log verbosity (5 also logs tailcat internals) |
 
 ## Caveats
