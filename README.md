@@ -21,6 +21,7 @@ instead of being funneled through the Kubernetes apiserver.
   re-resolves a ready pod.
 * Simultaneous forwarding to multiple targets (`-f targets.txt`).
 * TCP and UDP.
+* Local SOCKS5 proxy with cluster-side DNS (`kubectl relay socks`).
 
 ## Usage
 
@@ -52,6 +53,33 @@ Port syntax: `[LOCAL_PORT:]REMOTE_PORT[@PROTOCOL]`, where `REMOTE_PORT` may
 be a named port of the target object (its declared protocol is used unless
 `@tcp`/`@udp` is given; numeric ports default to TCP). `:REMOTE_PORT` picks
 an ephemeral local port.
+
+## SOCKS5 proxy
+
+```bash
+# Listen on 127.0.0.1:1080, with TCP CONNECT and UDP ASSOCIATE
+kubectl relay socks
+
+# Choose a port, or use 0 for an available port
+kubectl relay --context staging socks 1081
+
+# Choose where the proxy pod runs (also controls short-name DNS resolution)
+kubectl relay --server.namespace payments socks
+
+# In another terminal; socks5h sends the hostname to the cluster for resolution
+curl --proxy socks5h://127.0.0.1:1080 http://api.payments.svc:8080
+```
+
+Use `--address` to change the local bind IP. For browsers, select SOCKS v5
+and enable DNS through the proxy. Hostnames resolve inside the proxy pod;
+`api` refers to a service in its namespace, while `api.payments.svc` names
+a service in `payments`. IP destinations are also supported.
+
+The proxy runs in the foreground. Ctrl-C stops it and deletes its server
+Job. It does not configure system proxy settings or launch a child command.
+`-n` and `-f` do not apply to SOCKS mode; use
+`--server.namespace` for the proxy pod namespace. BIND is not supported.
+The same UDP payload and reply-source limits described below apply.
 
 ## How it works
 
