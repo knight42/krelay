@@ -52,10 +52,7 @@ type options struct {
 	// serverToken, if set, skips creating the server Job and connects to an
 	// already-running krelay-server. Intended for development and testing.
 	serverToken string
-	// sshListen switches SSH mode from opening a shell directly to
-	// forwarding a local TCP port for an external ssh client.
-	sshListen bool
-	verbosity int
+	verbosity   int
 }
 
 // derpMapArg returns the krelay-server flag conveying the DERP map choice.
@@ -295,8 +292,8 @@ through the Kubernetes apiserver.
 SSH mode (ssh/NODE [LOCAL_PORT]):
   Creates a privileged pod on the target node and uses nsenter to give
   you a root shell in the host namespaces — like kubectl node-shell,
-  but over WireGuard. Opens the shell directly; with --listen or a
-  LOCAL_PORT argument, it instead listens on a local port and prints
+  but over WireGuard. Opens the shell directly; with a LOCAL_PORT
+  argument, it instead listens on that local port and prints
   an address for the ssh client of your choice.`,
 		Example: example(),
 		Args:    cobra.ArbitraryArgs,
@@ -336,7 +333,6 @@ SSH mode (ssh/NODE [LOCAL_PORT]):
 	flags.StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to bootstrap the tunnel. Point this at your own DERP deployment to avoid third-party relays. A file:// URL is read locally and its contents are sent to the server pod.")
 	flags.StringVar(&o.serverToken, "server-token", "", "Connect to an existing krelay-server using this token instead of creating one.")
 	_ = flags.MarkHidden("server-token")
-	flags.BoolVar(&o.sshListen, "listen", false, "SSH mode: instead of opening a shell on the node, listen on a local TCP port (the LOCAL_PORT argument, or an ephemeral port) and print the address to connect to with ssh.")
 	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")
 
 	if c.Execute() != nil {

@@ -30,8 +30,8 @@ const serverSSHPort = 22
 // scheduled on the target node (privileged + hostPID) and establishes the
 // WireGuard tunnel to the server's built-in SSH server, which uses nsenter to
 // give the client a shell in the host namespaces. By default it opens that
-// shell directly on the local terminal; with --listen (or a LOCAL_PORT
-// argument) it instead forwards a local TCP port for an external ssh client.
+// shell directly on the local terminal; with a LOCAL_PORT argument it instead
+// forwards that local TCP port for an external ssh client.
 func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error {
 	// Start loading the DERP map now so the region code is usually ready,
 	// at no extra latency, by the time the tunnel logs mention the region.
@@ -76,7 +76,7 @@ func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error 
 		return fmt.Errorf("establish tunnel: %w", err)
 	}
 
-	listen := o.sshListen || localPort != ""
+	listen := localPort != ""
 
 	go maintainHeartbeat(ctx, tc)
 	// In direct-shell mode the terminal is in raw mode, so demote path logs.
@@ -86,9 +86,6 @@ func (o *options) runSSH(ctx context.Context, nodeName, localPort string) error 
 		return runSSHShell(ctx, tc)
 	}
 
-	if localPort == "" {
-		localPort = "0"
-	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(o.address, localPort))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
