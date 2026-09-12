@@ -1,4 +1,4 @@
-// Command krelay is a kubectl plugin (kubectl-relay) that forwards local TCP
+// Command krelay is a kubectl plugin (kubectl-relay) that forwards local TCP/UDP
 // ports to targets reachable from inside a Kubernetes cluster. It launches a
 // krelay-server Job in the cluster and exchanges traffic with it over a
 // tailcat (WireGuard + DERP) tunnel, bypassing the apiserver for data.
@@ -116,6 +116,10 @@ func startServer(ctx context.Context, o *options, priv key.NodePrivate, nodeName
 }
 
 func (o *options) run(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "socks" {
+		return o.runSOCKS(ctx, args[1:])
+	}
+
 	namespace, _, err := o.cf.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return fmt.Errorf("get namespace: %w", err)
@@ -283,11 +287,17 @@ func main() {
 	c := cobra.Command{
 		Use: fmt.Sprintf("%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT [...[LOCAL_PORT_N:]REMOTE_PORT_N]", programName()),
 		Long: `Forward local TCP/UDP ports to a pod, service, workload, IP or hostname
-reachable from inside the cluster, or SSH into a cluster node.
+reachable from inside the cluster, run a local SOCKS5 proxy, or SSH into a cluster node.
 
 Traffic flows over an end-to-end encrypted tailcat (WireGuard) tunnel
 between this machine and a short-lived krelay-server pod, instead of
 through the Kubernetes apiserver.
+
+SOCKS mode (socks [PORT]):
+  Listen on 127.0.0.1:1080 by default (PORT=0 picks an available port).
+  Supports TCP CONNECT and UDP ASSOCIATE; hostnames resolve in the server
+  pod. Use --server.namespace to select its namespace and --address to
+  change the local bind address. Ctrl-C stops the proxy and removes the Job.
 
 SSH mode (ssh/NODE [LOCAL_PORT]):
   Creates a privileged pod on the target node and uses nsenter to give
@@ -309,6 +319,14 @@ SSH mode (ssh/NODE [LOCAL_PORT]):
 				}
 				_, err = fmt.Fprintln(cmd.OutOrStdout())
 				return err
+			}
+			if len(args) > 0 && args[0] == "socks" {
+				if cmd.Flags().Changed("namespace") {
+					return errors.New("-n/--namespace does not apply to SOCKS mode; use --server.namespace for the proxy pod namespace")
+				}
+				if cmd.Flags().Changed("file") {
+					return errors.New("-f/--file cannot be combined with SOCKS mode")
+				}
 			}
 			slog.SetLogLoggerLevel(logLevel(o.verbosity))
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -362,6 +380,9 @@ func example() string {
 
   # Forward local port 5353 to port 53 of the IP 10.96.0.10
   %[1]s ip/10.96.0.10 5353:53
+
+  # Start a local SOCKS5 proxy with cluster-side DNS
+  %[1]s socks
 
   # Open a root shell on a cluster node
   %[1]s ssh/my-node-01

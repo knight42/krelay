@@ -186,6 +186,9 @@ func dialUDPTunnel(ctx context.Context, tc *tailcat.Client, dest string) (tailca
 	if err != nil {
 		return nil, fmt.Errorf("dial udp tunnel: %w", err)
 	}
+	// The dial context must also bound the application-level handshake.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
 	var req bytes.Buffer
 	if err := protocol.WriteDialRequest(&req, dest); err != nil {
 		conn.Close()

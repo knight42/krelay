@@ -239,6 +239,9 @@ func dialTunnel(ctx context.Context, tc *tailcat.Client, dest string) (net.Conn,
 	if err != nil {
 		return nil, fmt.Errorf("dial tunnel: %w", err)
 	}
+	// The dial context must also bound the application-level handshake.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
 	if err := protocol.WriteDialRequest(conn, dest); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("send dial request: %w", err)
