@@ -41,7 +41,7 @@ kubectl relay -n kube-system svc/kube-dns 10053:53@udp
 kubectl relay ssh/my-node-01
 
 # Instead of a shell, listen on a local port for your own ssh client
-kubectl relay ssh/my-node-01 2222   # or --listen for an ephemeral port
+kubectl relay ssh/my-node-01 2222   # use 0 for an ephemeral port
 # → ssh -p 2222 127.0.0.1
 
 # Multiple targets
@@ -103,7 +103,6 @@ kubectl relay --derp-map-url=file:///etc/krelay/derpmap.json svc/nginx 8080:80
 | `--server.namespace` | `default` | Namespace for the server Job |
 | `--server.pull-policy` | `IfNotPresent` | Image pull policy of the server pod |
 | `--derp-map-url` | `https://tailcat.dev/derpmap.json` | DERP map for the tunnel bootstrap (`file://` reads a local file) |
-| `--listen` | `false` | SSH mode: listen on a local port instead of opening a shell |
 | `-v` | `3` | Log verbosity (5 also logs tailcat internals) |
 
 ## Caveats
