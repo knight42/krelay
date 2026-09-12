@@ -6,7 +6,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/spf13/cobra v1.10.2
 	github.com/tailscale/gliderssh v0.3.4-0.20260716005906-1a0f895faf28
-	github.com/tailscale/tailcat v0.5.1-0.20260904052216-7465d56d3e16
+	github.com/tailscale/tailcat v0.6.0
 	golang.org/x/crypto v0.55.0
 	golang.org/x/term v0.45.0
 	k8s.io/api v0.37.0
