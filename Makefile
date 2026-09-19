@@ -1,4 +1,5 @@
 IMAGE ?= ghcr.io/knight42/krelay-server:v2
+PLATFORMS ?= linux/amd64,linux/arm64
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -25,9 +26,12 @@ lint:
 	golangci-lint run
 
 .PHONY: server-image
+# OCI archives preserve both architectures without requiring a multi-platform
+# local Docker image store. Override PLATFORMS to build a single architecture.
 server-image:
-	docker buildx build --platform linux/amd64 -t $(IMAGE) --load .
+	mkdir -p dist
+	docker buildx build --platform $(PLATFORMS) -t $(IMAGE) --output type=oci,dest=dist/krelay-server.tar .
 
 .PHONY: push-server-image
 push-server-image:
-	docker buildx build --platform linux/amd64 -t $(IMAGE) --push .
+	docker buildx build --platform $(PLATFORMS) -t $(IMAGE) --push .
