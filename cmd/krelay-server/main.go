@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/tailscale/tailcat"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
 	"tailscale.com/wgengine/filter"
@@ -150,11 +151,21 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+	pathTicker := time.NewTicker(5 * time.Second)
+	defer pathTicker.Stop()
+	var lastPath string
 	for {
 		select {
 		case sig := <-sigCh:
 			log.Printf("received %v, exiting", sig)
 			return
+		case <-pathTicker.C:
+			// Status observes the server's path without sending extra probes.
+			path := peerPath(srv.Status().Peer[clientKey])
+			if path != "" && path != lastPath {
+				log.Printf("tunnel path: %s", path)
+			}
+			lastPath = path
 		case <-ticker.C:
 			if idle, ok := tracker.idleFor(); ok && idle > idleTimeout {
 				log.Printf("no active connections for %v, exiting", idle.Round(time.Second))
@@ -162,6 +173,21 @@ func main() {
 			}
 		}
 	}
+}
+
+// peerPath describes the currently reported route, or nothing while it is
+// unknown. Relay can remain populated on a direct connection, so CurAddr wins.
+func peerPath(peer *ipnstate.PeerStatus) string {
+	if peer == nil {
+		return ""
+	}
+	if peer.CurAddr != "" {
+		return "direct " + peer.CurAddr
+	}
+	if peer.Relay != "" {
+		return "derp " + peer.Relay
+	}
+	return ""
 }
 
 func handleTunnelConn(c net.Conn, tracker *activityTracker) {
