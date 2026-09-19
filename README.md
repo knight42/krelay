@@ -147,6 +147,7 @@ kubectl relay --derp-map-url=file:///etc/krelay/derpmap.json svc/nginx 8080:80
 
 ```bash
 make krelay        # build the CLI
-make server-image  # build the krelay-server image
+make server-image  # build amd64 + arm64 images into dist/krelay-server.tar (OCI)
+make push-server-image  # publish both architectures under the IMAGE tag
 make test          # unit tests
 ```
