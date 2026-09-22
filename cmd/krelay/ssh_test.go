@@ -2,13 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
 	"io"
 	"net"
-	"path/filepath"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	ssh "github.com/tailscale/gliderssh"
@@ -46,9 +48,35 @@ func TestParseSSHTarget(t *testing.T) {
 	}
 }
 
-// serveSSH runs an SSH server with the given session handler on a unix socket
-// pair (net.Pipe deadlocks: it is unbuffered, and both SSH sides start by
-// writing their version banner) and returns the client end.
+// connPair returns two connected net.Conn ends backed by a kernel-buffered
+// socketpair. net.Pipe would deadlock (it is unbuffered, and both SSH sides
+// start by writing their version banner), and a filesystem unix socket in
+// t.TempDir() can exceed the ~104-byte socket path limit on macOS.
+func connPair(t *testing.T) (net.Conn, net.Conn) {
+	t.Helper()
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("socketpair: %v", err)
+	}
+	conns := make([]net.Conn, 2)
+	for i, fd := range fds {
+		// net.FileConn dups the fd, so the os.File wrapper is closed here.
+		f := os.NewFile(uintptr(fd), "socketpair")
+		conns[i], err = net.FileConn(f)
+		f.Close()
+		if err != nil {
+			t.Fatalf("FileConn: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		conns[0].Close()
+		conns[1].Close()
+	})
+	return conns[0], conns[1]
+}
+
+// serveSSH runs an SSH server with the given session handler on one end of a
+// socketpair and returns the client end.
 func serveSSH(t *testing.T, handler ssh.Handler) net.Conn {
 	t.Helper()
 	hostKey, err := generateTestHostKey()
@@ -62,22 +90,8 @@ func serveSSH(t *testing.T, handler ssh.Handler) net.Conn {
 	}
 	srv.AddHostKey(hostKey)
 
-	ln, err := net.Listen("unix", filepath.Join(t.TempDir(), "ssh.sock"))
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	t.Cleanup(func() { _ = ln.Close() })
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		srv.HandleConn(conn)
-	}()
-	client, err := net.Dial("unix", ln.Addr().String())
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
+	client, server := connPair(t)
+	go srv.HandleConn(server)
 	return client
 }
 
@@ -119,7 +133,7 @@ func TestRunSSHExec(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			conn := serveSSH(t, tc.handler)
 			var stdout, stderr bytes.Buffer
-			err := runSSHExec(conn, tc.command, strings.NewReader(tc.stdin), &stdout, &stderr)
+			err := runSSHExec(t.Context(), conn, tc.command, strings.NewReader(tc.stdin), &stdout, &stderr)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("runSSHExec() error = %v, want %v", err, tc.wantErr)
 			}
@@ -130,5 +144,30 @@ func TestRunSSHExec(t *testing.T) {
 				t.Errorf("stderr = %q, want %q", got, tc.wantStderr)
 			}
 		})
+	}
+}
+
+// TestRunSSHExecCanceled covers Ctrl-C/SIGTERM during a running command:
+// cancellation must abort the blocked sess.Run and surface a non-zero error,
+// not wait for the remote command.
+func TestRunSSHExecCanceled(t *testing.T) {
+	sessionStarted := make(chan struct{})
+	conn := serveSSH(t, func(s ssh.Session) {
+		close(sessionStarted)
+		<-s.Context().Done() // never exits on its own
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		<-sessionStarted
+		cancel()
+	}()
+
+	err := runSSHExec(ctx, conn, "sleep infinity", strings.NewReader(""), io.Discard, io.Discard)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runSSHExec() error = %v, want context.Canceled", err)
+	}
+	if _, ok := errors.AsType[exitCodeError](err); ok {
+		t.Fatal("cancellation must not masquerade as a remote exit status")
 	}
 }
