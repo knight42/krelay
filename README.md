@@ -12,9 +12,8 @@ instead of being funneled through the Kubernetes apiserver.
 * Forwards to `pod`, `svc`, `deploy`, `sts`, `ds`, `rs`, an in-cluster `ip`,
   or a `host`name resolved inside the cluster.
 * `ssh/NODE` — a root shell or one-shot commands on a cluster node via
-  nsenter (like `kubectl node-shell` but over WireGuard). A background mux
-  daemon shares one server pod and tunnel across invocations, so repeated
-  commands run in milliseconds.
+  nsenter (like `kubectl node-shell` but over WireGuard). Repeated commands
+  reuse the pod and tunnel and run in milliseconds.
 * Data plane bypasses the apiserver — no more SPDY/websocket streams through
   the control plane; large transfers don't load the apiserver.
 * End-to-end encrypted (WireGuard). The DERP relay only sees ciphertext and is
@@ -95,15 +94,10 @@ propagated as the exit code, so it scripts exactly like `ssh NODE COMMAND`:
 kubectl relay ssh/my-node-01 -- 'crictl ps | grep etcd'
 ```
 
-Sessions to the same node share one server pod and tunnel through a
-background mux daemon, in the spirit of OpenSSH ControlMaster: the first
-invocation pays for pod creation and tunnel setup (a few seconds), and later
-ones complete in milliseconds — only the daemon's startup ever talks to the
-apiserver. The daemon exits and deletes its pod after `--control-persist`
-(default 10m) without sessions; its socket and log live under
-`~/.local/state/krelay/` (or `$XDG_STATE_HOME/krelay`).
-Use `--control-persist=0` to skip the daemon and give the invocation its own
-short-lived server.
+Sessions to the same node are shared, like ssh's ControlMaster: the first
+command takes a few seconds to set up the pod and tunnel, later ones complete
+in milliseconds. Everything is cleaned up after `--control-persist`
+(default 10m) without sessions; `--control-persist=0` opts out of sharing.
 
 SSH mode runs independently from port forwarding and cannot be combined with
 `-f`.
@@ -167,9 +161,8 @@ kubectl relay --derp-map-url=file:///etc/krelay/derpmap.json svc/nginx 8080:80
   (`tailcat.MaxUDPPayload`); larger datagrams are dropped silently. Replies
   must come from the forwarded address and port — protocols that answer from
   an ephemeral port (e.g. TFTP) are not supported.
-* **SSH mode** keeps one mux daemon (and one server pod) per node; nodes are
-  independent of each other, and the daemon holds a privileged pod on the
-  node until `--control-persist` expires.
+* **SSH mode** keeps its privileged pod on the node until `--control-persist`
+  expires; each node gets its own pod.
 
 ## Development
 

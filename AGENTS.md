@@ -34,6 +34,33 @@ modify `main`.
 - Imports are grouped stdlib / external / `github.com/knight42/krelay`
   (goimports local prefix).
 
+## SSH mux daemon
+
+`ssh/NODE` sessions go through a per-(cluster, namespace, node) background
+daemon (hidden `--ssh-mux` flag, `cmd/krelay/sshmux.go`) that owns the server
+Job and tunnel, à la OpenSSH ControlMaster/ControlPersist:
+
+- Identity: sha256 of (resolved `ToRESTConfig().Host`, server namespace,
+  node name) — never raw kubeconfig flags, so cluster identity survives
+  `kubectl config use-context` and different kubeconfig spellings share a
+  daemon.
+- Files under `$XDG_STATE_HOME/krelay` (default `~/.local/state/krelay`):
+  `ssh-<id>.sock`, `.lock`, `.log`. The flock on `.lock`, held for the
+  daemon's lifetime, designates the socket owner: a socket whose lock is
+  free is an orphan and may be unlinked before bind — never unlink one
+  otherwise. `.lock` and `.log` are never removed; the log is truncated on
+  each daemon start.
+- Startup handshake: the parent passes a pipe as fd 3; the daemon writes one
+  line — `READY`, `BUSY` (lost the flock race; wait for the winner's
+  socket), or `ERROR <msg>`.
+- Lifetime: exits — deleting the Job and socket — after `--control-persist`
+  without sessions, or after two consecutive failures dialing the server's
+  SSH port. The server-side `--idle-timeout` backstops a SIGKILLed daemon.
+- `--control-persist=0` and `--server-token` bypass the daemon: the
+  invocation owns an in-process tunnel torn down on exit.
+- Exec mode (`ssh/NODE -- CMD`) propagates the remote exit status via
+  `exitCodeError`; keep it exiting silently with that code, like ssh.
+
 ## Verification
 
 End-to-end runs use the local OrbStack cluster (`kubectl` context
