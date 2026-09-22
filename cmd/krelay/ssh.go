@@ -70,7 +70,7 @@ func (o *options) runSSH(ctx context.Context, nodeName, command string) error {
 	}
 
 	if command != "" {
-		return runSSHExec(conn, command, os.Stdin, os.Stdout, os.Stderr)
+		return runSSHExec(ctx, conn, command, os.Stdin, os.Stdout, os.Stderr)
 	}
 	return runSSHShell(ctx, conn)
 }
@@ -172,11 +172,19 @@ func sshClientConfig() *gossh.ClientConfig {
 // runSSHExec runs one command on the node over an established SSH transport,
 // keeping stdout and stderr separate and reporting the remote exit status as
 // an exitCodeError. No PTY is allocated, mirroring `ssh HOST COMMAND`.
-func runSSHExec(conn net.Conn, command string, stdin io.Reader, stdout, stderr io.Writer) error {
+// Canceling ctx (Ctrl-C, SIGTERM) closes the transport, which is the only way
+// to interrupt the handshake and sess.Run below — both block on conn I/O —
+// and yields a non-zero exit.
+func runSSHExec(ctx context.Context, conn net.Conn, command string, stdin io.Reader, stdout, stderr io.Writer) error {
 	defer conn.Close()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
 
 	cc, chans, reqs, err := gossh.NewClientConn(conn, "krelay-server", sshClientConfig())
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("SSH handshake canceled: %w", ctxErr)
+		}
 		return fmt.Errorf("SSH handshake: %w", err)
 	}
 	client := gossh.NewClient(cc, chans, reqs)
@@ -203,12 +211,16 @@ func runSSHExec(conn net.Conn, command string, stdin io.Reader, stdout, stderr i
 	sess.Stderr = stderr
 
 	err = sess.Run(command)
+	// A command that completed (err == nil or a remote exit status) before
+	// the cancellation raced in still reports its real outcome.
 	var exitErr *gossh.ExitError
 	switch {
 	case err == nil:
 		return nil
 	case errors.As(err, &exitErr):
 		return exitCodeError{code: exitErr.ExitStatus()}
+	case ctx.Err() != nil:
+		return fmt.Errorf("session canceled: %w", ctx.Err())
 	default:
 		return fmt.Errorf("run remote command: %w", err)
 	}
