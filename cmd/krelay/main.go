@@ -17,11 +17,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tailscale/tailcat"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -125,27 +125,13 @@ func (o *options) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("get namespace: %w", err)
 	}
 
-	// SSH mode: `kubectl relay ssh/NODE`
+	// SSH mode: `kubectl relay ssh/NODE [-- COMMAND]`
 	if len(args) >= 1 {
 		nodeName, isSSH := parseSSHTarget(args[0])
 		if isSSH {
-			// Verify the node exists.
-			restCfg, err := o.cf.ToRESTConfig()
-			if err != nil {
-				return err
-			}
-			cs, err := kubernetes.NewForConfig(restCfg)
-			if err != nil {
-				return err
-			}
-			if _, err := cs.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{}); err != nil {
-				return fmt.Errorf("node %q: %w", nodeName, err)
-			}
-			var localPort string
-			if len(args) >= 2 {
-				localPort = args[1]
-			}
-			return o.runSSH(ctx, nodeName, localPort)
+			// Like ssh, the remaining arguments are joined into one command
+			// line for the remote shell; none means an interactive shell.
+			return o.runSSH(ctx, nodeName, strings.Join(args[1:], " "))
 		}
 	}
 
@@ -283,6 +269,7 @@ func main() {
 		cf: genericclioptions.NewConfigFlags(true),
 	}
 	printVersion := false
+	remoteExitCode := 0
 
 	c := cobra.Command{
 		Use: fmt.Sprintf("%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT [...[LOCAL_PORT_N:]REMOTE_PORT_N]", programName()),
@@ -299,12 +286,11 @@ SOCKS mode (socks [PORT]):
   pod. Use --server.namespace to select its namespace and --address to
   change the local bind address. Ctrl-C stops the proxy and removes the Job.
 
-SSH mode (ssh/NODE [LOCAL_PORT]):
-  Creates a privileged pod on the target node and uses nsenter to give
-  you a root shell in the host namespaces — like kubectl node-shell,
-  but over WireGuard. Opens the shell directly; with a LOCAL_PORT
-  argument, it instead listens on that local port and prints
-  an address for the ssh client of your choice.`,
+SSH mode (ssh/NODE [-- COMMAND]):
+  Creates a privileged pod on the target node and uses nsenter to enter
+  the host namespaces — like kubectl node-shell, but over WireGuard.
+  Without a command it opens an interactive root shell; with a command
+  it runs it and exits with the remote exit code, like ssh.`,
 		Example: example(),
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -329,9 +315,16 @@ SSH mode (ssh/NODE [LOCAL_PORT]):
 				}
 			}
 			slog.SetLogLoggerLevel(logLevel(o.verbosity))
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
-			return o.run(ctx, args)
+			err := o.run(ctx, args)
+			// A remote command's exit status is not a krelay failure: exit
+			// with the same code, silently, like ssh.
+			if ec, ok := errors.AsType[exitCodeError](err); ok {
+				remoteExitCode = ec.code
+				return nil
+			}
+			return err
 		},
 		SilenceUsage: true,
 	}
@@ -355,6 +348,9 @@ SSH mode (ssh/NODE [LOCAL_PORT]):
 
 	if c.Execute() != nil {
 		os.Exit(1)
+	}
+	if remoteExitCode != 0 {
+		os.Exit(remoteExitCode)
 	}
 }
 
@@ -387,8 +383,8 @@ func example() string {
   # Open a root shell on a cluster node
   %[1]s ssh/my-node-01
 
-  # Instead of a shell, listen on local port 2222 for your own ssh client
-  %[1]s ssh/my-node-01 2222
+  # Run a single command on a cluster node, like ssh
+  %[1]s ssh/my-node-01 -- journalctl -u kubelet -n 50
 
   # Forward multiple targets defined in a file
   %[1]s -f targets.txt`, name)
