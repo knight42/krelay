@@ -14,7 +14,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,33 +23,10 @@ import (
 	"tailscale.com/types/key"
 	"tailscale.com/wgengine/filter"
 
+	"github.com/knight42/krelay/pkg/activity"
 	"github.com/knight42/krelay/pkg/constants"
 	"github.com/knight42/krelay/pkg/protocol"
 )
-
-type activityTracker struct {
-	activeConns  atomic.Int64
-	lastActivity atomic.Int64 // unix nano
-}
-
-func (t *activityTracker) connStarted() {
-	t.lastActivity.Store(time.Now().UnixNano())
-	t.activeConns.Add(1)
-}
-
-func (t *activityTracker) connEnded() {
-	// Refresh lastActivity before decrementing so the idle monitor never
-	// observes zero connections alongside a stale timestamp.
-	t.lastActivity.Store(time.Now().UnixNano())
-	t.activeConns.Add(-1)
-}
-
-func (t *activityTracker) idleFor() (time.Duration, bool) {
-	if t.activeConns.Load() > 0 {
-		return 0, false
-	}
-	return time.Since(time.Unix(0, t.lastActivity.Load())), true
-}
 
 func main() {
 	var (
@@ -107,8 +83,7 @@ func main() {
 	}
 	token := ci.Addr()
 
-	tracker := &activityTracker{}
-	tracker.lastActivity.Store(time.Now().UnixNano())
+	tracker := activity.NewTracker()
 
 	tcpPorts := []filter.PortRange{{First: constants.TunnelPort, Last: constants.TunnelPort}}
 	var sshHandler func(net.Conn)
@@ -167,7 +142,7 @@ func main() {
 			}
 			lastPath = path
 		case <-ticker.C:
-			if idle, ok := tracker.idleFor(); ok && idle > idleTimeout {
+			if idle, ok := tracker.IdleFor(); ok && idle > idleTimeout {
 				log.Printf("no active connections for %v, exiting", idle.Round(time.Second))
 				return
 			}
@@ -190,9 +165,9 @@ func peerPath(peer *ipnstate.PeerStatus) string {
 	return ""
 }
 
-func handleTunnelConn(c net.Conn, tracker *activityTracker) {
-	tracker.connStarted()
-	defer tracker.connEnded()
+func handleTunnelConn(c net.Conn, tracker *activity.Tracker) {
+	tracker.ConnStarted()
+	defer tracker.ConnEnded()
 	defer c.Close()
 
 	target, err := protocol.ReadDialRequest(c)
@@ -233,9 +208,9 @@ func handleTunnelConn(c net.Conn, tracker *activityTracker) {
 // request naming the destination; the server acknowledges it with a dial
 // response datagram and then relays datagrams verbatim in both directions.
 // tailcat closes the flow after its UDPIdleTimeout of inactivity.
-func handleUDPFlow(c tailcat.ConnPacketConn, tracker *activityTracker) {
-	tracker.connStarted()
-	defer tracker.connEnded()
+func handleUDPFlow(c tailcat.ConnPacketConn, tracker *activity.Tracker) {
+	tracker.ConnStarted()
+	defer tracker.ConnEnded()
 	defer c.Close()
 
 	buf := make([]byte, 65535)

@@ -11,8 +11,9 @@ instead of being funneled through the Kubernetes apiserver.
 
 * Forwards to `pod`, `svc`, `deploy`, `sts`, `ds`, `rs`, an in-cluster `ip`,
   or a `host`name resolved inside the cluster.
-* `ssh/NODE` — opens a root shell on a cluster node via nsenter (like
-  `kubectl node-shell` but over WireGuard).
+* `ssh/NODE` — a root shell or one-shot commands on a cluster node via
+  nsenter (like `kubectl node-shell` but over WireGuard). Repeated commands
+  reuse the pod and tunnel and run in milliseconds.
 * Data plane bypasses the apiserver — no more SPDY/websocket streams through
   the control plane; large transfers don't load the apiserver.
 * End-to-end encrypted (WireGuard). The DERP relay only sees ciphertext and is
@@ -41,9 +42,8 @@ kubectl relay -n kube-system svc/kube-dns 10053:53@udp
 # Open a root shell on a cluster node
 kubectl relay ssh/my-node-01
 
-# Instead of a shell, listen on a local port for your own ssh client
-kubectl relay ssh/my-node-01 2222   # use 0 for an ephemeral port
-# → ssh -p 2222 127.0.0.1
+# Run a single command on a cluster node, like ssh
+kubectl relay ssh/my-node-01 -- journalctl -u kubelet -n 50
 
 # Multiple targets
 kubectl relay -f targets.txt
@@ -80,6 +80,27 @@ Job. It does not configure system proxy settings or launch a child command.
 `-n` and `-f` do not apply to SOCKS mode; use
 `--server.namespace` for the proxy pod namespace. BIND is not supported.
 The same UDP payload and reply-source limits described below apply.
+
+## SSH mode
+
+`kubectl relay ssh/NODE` creates a privileged (hostPID) pod pinned to the
+node and uses nsenter to enter the host namespaces — like
+`kubectl node-shell`, but over WireGuard. Without a command it opens an
+interactive root shell; with `-- COMMAND` it runs the command with stdin
+passed through, stdout/stderr kept separate, and the remote exit status
+propagated as the exit code, so it scripts exactly like `ssh NODE COMMAND`:
+
+```bash
+kubectl relay ssh/my-node-01 -- 'crictl ps | grep etcd'
+```
+
+Sessions to the same node are shared, like ssh's ControlMaster: the first
+command takes a few seconds to set up the pod and tunnel, later ones complete
+in milliseconds. Everything is cleaned up after `--control-persist`
+(default 10m) without sessions; `--control-persist=0` opts out of sharing.
+
+SSH mode runs independently from port forwarding and cannot be combined with
+`-f`.
 
 ## How it works
 
@@ -130,6 +151,7 @@ kubectl relay --derp-map-url=file:///etc/krelay/derpmap.json svc/nginx 8080:80
 | `--server.image` | `ghcr.io/knight42/krelay-server:v2` | Server image |
 | `--server.namespace` | `default` | Namespace for the server Job |
 | `--server.pull-policy` | `IfNotPresent` | Image pull policy of the server pod |
+| `--control-persist` | `10m` | SSH mode: how long the mux daemon keeps the server pod and tunnel alive after the last session (`0` disables the daemon) |
 | `--derp-map-url` | `https://tailcat.dev/derpmap.json` | DERP map for the tunnel bootstrap (`file://` reads a local file) |
 | `-v` | `3` | Log verbosity (5 also logs tailcat internals) |
 
@@ -139,9 +161,8 @@ kubectl relay --derp-map-url=file:///etc/krelay/derpmap.json svc/nginx 8080:80
   (`tailcat.MaxUDPPayload`); larger datagrams are dropped silently. Replies
   must come from the forwarded address and port — protocols that answer from
   an ephemeral port (e.g. TFTP) are not supported.
-* **SSH mode** runs independently from port forwarding and cannot be combined
-  with `-f`. To SSH into multiple nodes, run separate
-  `kubectl relay ssh/NODE` processes.
+* **SSH mode** keeps its privileged pod on the node until `--control-persist`
+  expires; each node gets its own pod.
 
 ## Development
 
