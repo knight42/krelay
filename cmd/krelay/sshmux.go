@@ -42,18 +42,19 @@ type muxPaths struct {
 }
 
 func (o *options) muxPaths(nodeName string) (muxPaths, error) {
+	// Key the daemon on the resolved apiserver URL, not on the raw
+	// kubeconfig flags: identical flags can reach different clusters (e.g.
+	// after `kubectl config use-context`), and different flags can name the
+	// same cluster, which should share a daemon.
+	restCfg, err := o.cf.ToRESTConfig()
+	if err != nil {
+		return muxPaths{}, err
+	}
 	stateDir, err := stateDir()
 	if err != nil {
 		return muxPaths{}, err
 	}
-	base := filepath.Join(stateDir, "ssh-"+muxID(
-		os.Getenv("KUBECONFIG"),
-		strDeref(o.cf.KubeConfig),
-		strDeref(o.cf.Context),
-		strDeref(o.cf.ClusterName),
-		o.serverNamespace,
-		nodeName,
-	))
+	base := filepath.Join(stateDir, "ssh-"+muxID(restCfg.Host, o.serverNamespace, nodeName))
 	return muxPaths{sock: base + ".sock", lock: base + ".lock", log: base + ".log"}, nil
 }
 
