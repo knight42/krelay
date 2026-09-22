@@ -53,6 +53,12 @@ type options struct {
 	// already-running krelay-server. Intended for development and testing.
 	serverToken string
 	verbosity   int
+
+	// controlPersist is how long the SSH mux daemon outlives its last
+	// session; 0 disables the daemon entirely.
+	controlPersist time.Duration
+	// sshMux marks this process as the mux daemon (internal, see sshmux.go).
+	sshMux bool
 }
 
 // derpMapArg returns the krelay-server flag conveying the DERP map choice.
@@ -129,6 +135,9 @@ func (o *options) run(ctx context.Context, args []string) error {
 	if len(args) >= 1 {
 		nodeName, isSSH := parseSSHTarget(args[0])
 		if isSSH {
+			if o.sshMux {
+				return o.runSSHMux(ctx, nodeName)
+			}
 			// Like ssh, the remaining arguments are joined into one command
 			// line for the remote shell; none means an interactive shell.
 			return o.runSSH(ctx, nodeName, strings.Join(args[1:], " "))
@@ -290,7 +299,12 @@ SSH mode (ssh/NODE [-- COMMAND]):
   Creates a privileged pod on the target node and uses nsenter to enter
   the host namespaces — like kubectl node-shell, but over WireGuard.
   Without a command it opens an interactive root shell; with a command
-  it runs it and exits with the remote exit code, like ssh.`,
+  it runs it and exits with the remote exit code, like ssh.
+
+  Sessions to the same node share one server pod and tunnel through a
+  background mux daemon (à la ssh ControlMaster), so repeated commands
+  skip pod creation and tunnel setup. The daemon exits and deletes the
+  pod after --control-persist without sessions.`,
 		Example: example(),
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -344,6 +358,9 @@ SSH mode (ssh/NODE [-- COMMAND]):
 	flags.StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to bootstrap the tunnel. Point this at your own DERP deployment to avoid third-party relays. A file:// URL is read locally and its contents are sent to the server pod.")
 	flags.StringVar(&o.serverToken, "server-token", "", "Connect to an existing krelay-server using this token instead of creating one.")
 	_ = flags.MarkHidden("server-token")
+	flags.DurationVar(&o.controlPersist, "control-persist", 10*time.Minute, "In SSH mode, how long the background mux daemon keeps the server pod and tunnel alive after the last session. 0 gives each invocation its own short-lived server instead.")
+	flags.BoolVar(&o.sshMux, "ssh-mux", false, "Run as the SSH mux daemon (internal).")
+	_ = flags.MarkHidden("ssh-mux")
 	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")
 
 	if c.Execute() != nil {

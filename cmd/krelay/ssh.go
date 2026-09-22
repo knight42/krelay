@@ -42,18 +42,31 @@ func (e exitCodeError) Error() string {
 // (privileged + hostPID), which uses nsenter to run sessions in the host
 // namespaces. Without a command it opens an interactive shell on the local
 // terminal; with a command it runs it and propagates the exit code, like ssh.
+//
+// The connection normally goes through the shared mux daemon (see sshmux.go);
+// with --control-persist=0 or --server-token this process establishes its own
+// tunnel and tears it down on exit.
 func (o *options) runSSH(ctx context.Context, nodeName, command string) error {
-	tn, err := o.dialSSHTunnel(ctx, nodeName, true)
-	if err != nil {
-		return err
-	}
-	defer tn.Close()
+	var conn net.Conn
+	if o.controlPersist > 0 && o.serverToken == "" {
+		var err error
+		conn, err = o.muxDial(ctx, nodeName)
+		if err != nil {
+			return err
+		}
+	} else {
+		tn, err := o.dialSSHTunnel(ctx, nodeName, true)
+		if err != nil {
+			return err
+		}
+		defer tn.Close()
 
-	dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	conn, err := tn.tc.DialTCPPort(dialCtx, serverSSHPort)
-	cancel()
-	if err != nil {
-		return fmt.Errorf("dial SSH port on krelay-server: %w", err)
+		dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		conn, err = tn.tc.DialTCPPort(dialCtx, serverSSHPort)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("dial SSH port on krelay-server: %w", err)
+		}
 	}
 
 	if command != "" {
