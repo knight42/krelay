@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/tailscale/tailcat"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
@@ -59,6 +60,9 @@ type options struct {
 	controlPersist time.Duration
 	// sshMux marks this process as the mux daemon (internal, see sshmux.go).
 	sshMux bool
+	// flags is the parsed command line, used to re-exec the mux daemon with
+	// the same settings.
+	flags *pflag.FlagSet
 }
 
 // derpMapArg returns the krelay-server flag conveying the DERP map choice.
@@ -328,6 +332,7 @@ SSH mode (ssh/NODE [-- COMMAND]):
 					return errors.New("-f/--file cannot be combined with SOCKS mode")
 				}
 			}
+			o.flags = cmd.Flags()
 			slog.SetLogLoggerLevel(logLevel(o.verbosity))
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()

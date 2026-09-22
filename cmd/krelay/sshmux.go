@@ -20,13 +20,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/spf13/pflag"
 	"github.com/tailscale/tailcat"
 
 	"github.com/knight42/krelay/pkg/activity"
@@ -78,11 +78,21 @@ func muxID(parts ...string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func strDeref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
+// muxDaemonArgs reconstructs the daemon's command line by forwarding every
+// flag the user explicitly set, so newly introduced flags reach the daemon
+// without anyone remembering to forward them; unset flags need no forwarding
+// because the daemon is the same binary with the same defaults. All current
+// flags are single-valued (Value.String() would collapse a repeatable flag
+// to its last value).
+func muxDaemonArgs(nodeName string, flags *pflag.FlagSet) []string {
+	args := []string{"--ssh-mux", "ssh/" + nodeName}
+	flags.Visit(func(f *pflag.Flag) {
+		if f.Name == "ssh-mux" {
+			return
+		}
+		args = append(args, "--"+f.Name+"="+f.Value.String())
+	})
+	return args
 }
 
 // muxDial returns a connection to the SSH port of the node's krelay-server
@@ -203,24 +213,7 @@ func (o *options) spawnMuxDaemon(ctx context.Context, nodeName string, paths mux
 	}
 	defer logFile.Close()
 
-	args := []string{
-		"--ssh-mux", "ssh/" + nodeName,
-		"--server.namespace=" + o.serverNamespace,
-		"--server.image=" + o.serverImage,
-		"--server.pull-policy=" + o.serverPullPolicy,
-		"--derp-map-url=" + o.derpMapURL,
-		"--control-persist=" + o.controlPersist.String(),
-		"-v=" + strconv.Itoa(o.verbosity),
-	}
-	if v := strDeref(o.cf.KubeConfig); v != "" {
-		args = append(args, "--kubeconfig="+v)
-	}
-	if v := strDeref(o.cf.Context); v != "" {
-		args = append(args, "--context="+v)
-	}
-	if v := strDeref(o.cf.ClusterName); v != "" {
-		args = append(args, "--cluster="+v)
-	}
+	args := muxDaemonArgs(nodeName, o.flags)
 
 	r, w, err := os.Pipe()
 	if err != nil {

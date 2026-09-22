@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+	"time"
 
+	"github.com/spf13/pflag"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -133,6 +136,86 @@ func TestMuxPathsClusterIdentity(t *testing.T) {
 				t.Fatalf("sock A = %s, sock B = %s, wantSame = %v", pathsA.sock, pathsB.sock, tc.wantSame)
 			}
 		})
+	}
+}
+
+func TestMuxDaemonArgs(t *testing.T) {
+	newFlags := func() *pflag.FlagSet {
+		fs := pflag.NewFlagSet("krelay", pflag.ContinueOnError)
+		fs.String("server.image", "ghcr.io/knight42/krelay-server:v2", "")
+		fs.String("context", "", "")
+		fs.Duration("control-persist", 10*time.Minute, "")
+		fs.Bool("ssh-mux", false, "")
+		fs.IntP("v", "v", 3, "")
+		return fs
+	}
+	testCases := map[string]struct {
+		argv []string
+		want []string
+	}{
+		"unset flags are not forwarded": {
+			argv: nil,
+			want: []string{"--ssh-mux", "ssh/node-1"},
+		},
+		"set flags are forwarded verbatim": {
+			argv: []string{"--server.image=img:dev", "--context", "staging", "-v=4"},
+			want: []string{"--ssh-mux", "ssh/node-1", "--context=staging", "--server.image=img:dev", "--v=4"},
+		},
+		"ssh-mux itself is not duplicated": {
+			argv: []string{"--ssh-mux", "--control-persist=30s"},
+			want: []string{"--ssh-mux", "ssh/node-1", "--control-persist=30s"},
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			fs := newFlags()
+			if err := fs.Parse(tc.argv); err != nil {
+				t.Fatal(err)
+			}
+			got := muxDaemonArgs("node-1", fs)
+			// Visit iterates in lexical order, so the result is deterministic.
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("muxDaemonArgs() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMuxDaemonArgsRoundTrip proves value fidelity: args go straight to
+// execve (no shell), so values with spaces, quotes, '=' and newlines must
+// come back byte-for-byte when the daemon parses its command line.
+func TestMuxDaemonArgsRoundTrip(t *testing.T) {
+	const nasty = `img with "quotes" and =equals= and
+a newline`
+	build := func() *pflag.FlagSet {
+		fs := pflag.NewFlagSet("krelay", pflag.ContinueOnError)
+		fs.String("server.image", "default-img", "")
+		fs.Bool("ssh-mux", false, "")
+		return fs
+	}
+	parent := build()
+	if err := parent.Parse([]string{"--server.image", nasty}); err != nil {
+		t.Fatal(err)
+	}
+
+	daemon := build()
+	args := muxDaemonArgs("node-1", parent)
+	// The daemon parses flags and positional args from the same argv.
+	if err := daemon.Parse(args); err != nil {
+		t.Fatal(err)
+	}
+	got, err := daemon.GetString("server.image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nasty {
+		t.Fatalf("server.image = %q, want %q", got, nasty)
+	}
+	if ok, err := daemon.GetBool("ssh-mux"); err != nil || !ok {
+		t.Fatalf("ssh-mux = %v, %v; want true", ok, err)
+	}
+	if positional := daemon.Args(); len(positional) != 1 || positional[0] != "ssh/node-1" {
+		t.Fatalf("positional args = %q, want [ssh/node-1]", positional)
 	}
 }
 
