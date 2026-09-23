@@ -7,6 +7,9 @@
 
 `krelay` is a drop-in replacement for `kubectl port-forward` with some enhanced features.
 
+> [!NOTE]
+> The next generation of krelay, a tailcat-based rewrite, lives on the [`v2` branch](https://github.com/knight42/krelay/tree/v2). It is under heavy development and not stable yet.
+
 ## Table of Contents
 
 - [Highlights](#highlights)
