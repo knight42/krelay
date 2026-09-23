@@ -120,8 +120,7 @@ func writeACK(c net.Conn, ack xnet.Acknowledgement) error {
 }
 
 func ackCodeFromErr(err error) xnet.AckCode {
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
+	if dnsErr, ok := errors.AsType[*net.DNSError](err); ok {
 		if dnsErr.IsNotFound {
 			return xnet.AckCodeNoSuchHost
 		}
