@@ -53,9 +53,12 @@ Job and tunnel, à la OpenSSH ControlMaster/ControlPersist:
 - Startup handshake: the parent passes a pipe as fd 3; the daemon writes one
   line — `READY`, `BUSY` (lost the flock race; wait for the winner's
   socket), or `ERROR <msg>`.
-- Lifetime: exits — deleting the Job and socket — after `--control-persist`
-  without sessions, or after two consecutive failures dialing the server's
-  SSH port. The server-side `--idle-timeout` backstops a SIGKILLed daemon.
+- Lifetime: exits — deleting the Job and socket — when a pod watch sees the
+  server pod deleted or terminal (seconds; hung sessions get EOF), after
+  `--control-persist` without sessions, or after two consecutive failures
+  dialing the server's SSH port (backstop for node-level death the watch
+  can't see; a broken watch is never treated as pod death). The server-side
+  `--idle-timeout` backstops a SIGKILLed daemon.
 - `--control-persist=0` and `--server-token` bypass the daemon: the
   invocation owns an in-process tunnel torn down on exit.
 - Exec mode (`ssh/NODE -- CMD`) propagates the remote exit status via
@@ -63,6 +66,8 @@ Job and tunnel, à la OpenSSH ControlMaster/ControlPersist:
 
 ## Verification
 
-End-to-end runs use the local OrbStack cluster (`kubectl` context
-`orbstack`), e.g. `./krelay svc/kubernetes 8443:443`. Client-only changes
-work against the already-published server image.
+End-to-end runs use the local OrbStack cluster (its kubeconfig is not merged
+into `~/.kube/config`; pass `--kubeconfig ~/.orbstack/k8s/config.yml`, node
+name `orbstack`), e.g. `./krelay --kubeconfig ~/.orbstack/k8s/config.yml
+svc/kubernetes 8443:443`. Client-only changes work against the
+already-published server image.
