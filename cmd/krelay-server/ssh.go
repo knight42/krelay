@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
@@ -13,7 +14,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	ssh "github.com/tailscale/gliderssh"
@@ -46,6 +49,9 @@ func newSSHHandler() func(net.Conn) {
 
 func sessionHandler(sess ssh.Session) {
 	shell, err := hostShell("/proc/1/root")
+	if err == nil {
+		err = checkShell(sess.Context(), nsenterCommand(shell, shellProbe))
+	}
 	if err != nil {
 		_, _ = fmt.Fprintf(sess.Stderr(), "krelay: %v\r\n", err)
 		_ = sess.Exit(1)
@@ -93,19 +99,41 @@ func nsenterCommand(shell, rawCmd string) *exec.Cmd {
 }
 
 // hostShell selects an executable host bash or sh under the host root
-// (/proc/1/root with hostPID). Bottlerocket's sh -> brush is a restricted
-// command dispatcher, not a shell usable for SSH sessions.
+// (/proc/1/root with hostPID). checkShell verifies its shell semantics before use.
 func hostShell(root string) (string, error) {
 	for _, p := range []string{"/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh"} {
 		hostPath := filepath.Join(root, p)
-		if target, err := os.Readlink(hostPath); err == nil && filepath.Base(target) == "brush" {
-			return "", errors.New("host shell unsupported: Bottlerocket's brush is a restricted command dispatcher; krelay SSH requires a host bash or sh")
-		}
 		if info, err := os.Stat(hostPath); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
 			return p, nil
 		}
 	}
 	return "", errors.New("host shell unsupported: no executable bash or sh found on the host")
+}
+
+// Exercise variable expansion and a shell builtin without touching host files
+// or depending on external tools. A successful exit alone does not prove that
+// a restricted command dispatcher actually interpreted the script.
+const shellProbe = `krelay_probe=ok; printf 'krelay-shell-%s' "$krelay_probe"`
+
+// checkShell runs the probe in the same namespaces and environment as the
+// session, bounded so an unusable shell cannot hang session startup.
+func checkShell(ctx context.Context, cmd *exec.Cmd) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	probe := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
+	probe.Env = cmd.Env
+	probe.WaitDelay = 100 * time.Millisecond
+	output, err := probe.CombinedOutput()
+	if ctx.Err() != nil {
+		return fmt.Errorf("host shell check failed: %w", ctx.Err())
+	}
+	if err != nil {
+		return fmt.Errorf("host shell check failed: cannot execute shell commands: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	if string(output) != "krelay-shell-ok" {
+		return errors.New("host shell unsupported: shell command probe returned unexpected output")
+	}
+	return nil
 }
 
 func runWithPTY(sess ssh.Session, cmd *exec.Cmd, ptyReq ssh.Pty, winCh <-chan ssh.Window) {
