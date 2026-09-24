@@ -66,8 +66,8 @@ Job and tunnel, à la OpenSSH ControlMaster/ControlPersist:
 
 ## Verification
 
-End-to-end runs use the local OrbStack cluster (its kubeconfig is not merged
-into `~/.kube/config`; pass `--kubeconfig ~/.orbstack/k8s/config.yml`, node
-name `orbstack`), e.g. `./krelay --kubeconfig ~/.orbstack/k8s/config.yml
-svc/kubernetes 8443:443`. Client-only changes work against the
-already-published server image.
+End-to-end runs use the local OrbStack cluster (`kubectl` context
+`orbstack`), e.g. `./krelay svc/kubernetes 8443:443`. Client-only changes
+work against the already-published server image. Note the shell may export
+`KUBECONFIG` pointing at a work cluster; the `orbstack` context lives in
+`~/.kube/config`, so unset it (or set `KUBECONFIG=~/.kube/config`) first.
