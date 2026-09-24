@@ -300,9 +300,35 @@ func (o *options) runSSHMux(ctx context.Context, nodeName string) error {
 
 	tracker := activity.NewTracker()
 	shutdown := make(chan string, 1)
-	// Consecutive failures to reach the server pod (e.g. it was evicted)
-	// shut the daemon down instead of serving dead sessions; the next client
-	// invocation then starts fresh.
+
+	// The daemon owns the Job, so it also observes it: the apiserver reports
+	// the pod's deletion within seconds, whereas a dead WireGuard peer only
+	// shows up as 30s dial timeouts. Exiting promptly tears down every hung
+	// session (clients see EOF instead of a frozen shell) and lets the next
+	// invocation respawn fresh. tn.sj is nil only when the daemon is run by
+	// hand with --server-token; then there is no Job to observe.
+	if tn.sj != nil {
+		go func() {
+			reason, err := tn.sj.WaitPodGone(ctx)
+			if err != nil {
+				// A broken watch is not pod death; the dial-failure
+				// backstop below still covers an actually dead server.
+				if ctx.Err() == nil {
+					slog.Warn("Server pod watch ended", slog.Any("error", err))
+				}
+				return
+			}
+			select {
+			case shutdown <- "server pod " + reason:
+			default:
+			}
+		}()
+	}
+
+	// Consecutive failures to reach the server pod shut the daemon down
+	// instead of serving dead sessions; the next client invocation then
+	// starts fresh. This backstops deaths the pod watch cannot see, such as
+	// the node dropping off the network while its pod object stays Running.
 	var dialFailures atomic.Int64
 	go func() {
 		for {

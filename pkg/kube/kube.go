@@ -94,6 +94,43 @@ func (sj *ServerJob) ReadToken(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("krelay-server logs ended without a %s line", constants.TokenPrefix)
 }
 
+// WaitPodGone blocks until the server pod is deleted or reaches a terminal
+// phase, returning a short reason for logs. Watch interruptions are retried
+// internally, so an apiserver blip never reads as pod death; the only error
+// case is ctx ending first (or the watch machinery failing for good).
+func (sj *ServerJob) WaitPodGone(ctx context.Context) (string, error) {
+	var reason string
+	_, err := watchtools.UntilWithSync(ctx, jobPodListWatch(sj.cs, sj.Namespace, sj.Name), &corev1.Pod{},
+		func(store cache.Store) (bool, error) {
+			_, exists, err := store.GetByKey(sj.Namespace + "/" + sj.PodName)
+			if err != nil {
+				return false, err
+			}
+			if !exists {
+				reason = "deleted"
+			}
+			return !exists, nil
+		},
+		func(ev watch.Event) (bool, error) {
+			pod, ok := ev.Object.(*corev1.Pod)
+			if !ok || pod.Name != sj.PodName {
+				return false, nil
+			}
+			if ev.Type == watch.Deleted {
+				reason = "deleted"
+				return true, nil
+			}
+			switch pod.Status.Phase {
+			case corev1.PodFailed, corev1.PodSucceeded:
+				reason = "terminated: " + string(pod.Status.Phase)
+				return true, nil
+			default:
+				return false, nil
+			}
+		})
+	return reason, err
+}
+
 // Close deletes the server Job and its pods. It uses its own timeout so that
 // cleanup still happens when the caller's context is already canceled.
 func (sj *ServerJob) Close() {
@@ -183,12 +220,10 @@ func unrecoverableReason(pod *corev1.Pod) string {
 	return ""
 }
 
-func waitForServerPod(ctx context.Context, cs kubernetes.Interface, namespace, jobName string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-
+// jobPodListWatch lists and watches the pods belonging to a Job.
+func jobPodListWatch(cs kubernetes.Interface, namespace, jobName string) *cache.ListWatch {
 	selector := "job-name=" + jobName
-	lw := &cache.ListWatch{
+	return &cache.ListWatch{
 		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
 			options.LabelSelector = selector
 			return cs.CoreV1().Pods(namespace).List(ctx, options)
@@ -198,6 +233,13 @@ func waitForServerPod(ctx context.Context, cs kubernetes.Interface, namespace, j
 			return cs.CoreV1().Pods(namespace).Watch(ctx, options)
 		},
 	}
+}
+
+func waitForServerPod(ctx context.Context, cs kubernetes.Interface, namespace, jobName string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	lw := jobPodListWatch(cs, namespace, jobName)
 
 	var podName string
 	_, err := watchtools.UntilWithSync(ctx, lw, &corev1.Pod{}, nil, func(ev watch.Event) (bool, error) {
