@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -43,7 +45,13 @@ func newSSHHandler() func(net.Conn) {
 }
 
 func sessionHandler(sess ssh.Session) {
-	cmd := nsenterCommand(sess.RawCommand())
+	shell, err := hostShell("/proc/1/root")
+	if err != nil {
+		_, _ = fmt.Fprintf(sess.Stderr(), "krelay: %v\r\n", err)
+		_ = sess.Exit(1)
+		return
+	}
+	cmd := nsenterCommand(shell, sess.RawCommand())
 
 	env := cmd.Env
 	for _, kv := range sess.Environ() {
@@ -66,8 +74,7 @@ func sessionHandler(sess ssh.Session) {
 }
 
 // nsenterCommand builds the command that enters all host namespaces via PID 1.
-func nsenterCommand(rawCmd string) *exec.Cmd {
-	shell := hostShell()
+func nsenterCommand(shell, rawCmd string) *exec.Cmd {
 	nsenter := []string{
 		"nsenter", "--target", "1",
 		"--mount", "--uts", "--ipc", "--net", "--pid", "--",
@@ -85,15 +92,20 @@ func nsenterCommand(rawCmd string) *exec.Cmd {
 	return cmd
 }
 
-// hostShell returns the path to bash on the host if it exists (visible
-// under /proc/1/root since we have hostPID), falling back to sh.
-func hostShell() string {
-	for _, p := range []string{"/proc/1/root/bin/bash", "/proc/1/root/usr/bin/bash"} {
-		if _, err := os.Stat(p); err == nil {
-			return "bash"
+// hostShell selects an executable host bash or sh under the host root
+// (/proc/1/root with hostPID). Bottlerocket's sh -> brush is a restricted
+// command dispatcher, not a shell usable for SSH sessions.
+func hostShell(root string) (string, error) {
+	for _, p := range []string{"/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh"} {
+		hostPath := filepath.Join(root, p)
+		if target, err := os.Readlink(hostPath); err == nil && filepath.Base(target) == "brush" {
+			return "", errors.New("host shell unsupported: Bottlerocket's brush is a restricted command dispatcher; krelay SSH requires a host bash or sh")
+		}
+		if info, err := os.Stat(hostPath); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return p, nil
 		}
 	}
-	return "sh"
+	return "", errors.New("host shell unsupported: no executable bash or sh found on the host")
 }
 
 func runWithPTY(sess ssh.Session, cmd *exec.Cmd, ptyReq ssh.Pty, winCh <-chan ssh.Window) {
