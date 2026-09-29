@@ -172,7 +172,7 @@ func TestMuxDaemonArgs(t *testing.T) {
 			if err := fs.Parse(tc.argv); err != nil {
 				t.Fatal(err)
 			}
-			got := muxDaemonArgs("node-1", fs)
+			got := muxDaemonArgs("node-1", fs, false)
 			// Visit iterates in lexical order, so the result is deterministic.
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("muxDaemonArgs() = %q, want %q", got, tc.want)
@@ -199,7 +199,7 @@ a newline`
 	}
 
 	daemon := build()
-	args := muxDaemonArgs("node-1", parent)
+	args := muxDaemonArgs("node-1", parent, false)
 	// The daemon parses flags and positional args from the same argv.
 	if err := daemon.Parse(args); err != nil {
 		t.Fatal(err)

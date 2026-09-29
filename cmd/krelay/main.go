@@ -1,4 +1,4 @@
-// Command krelay is a kubectl plugin (kubectl-relay) that forwards local TCP/UDP
+// Command krelay is a standalone CLI and kubectl plugin that forwards local TCP/UDP
 // ports to targets reachable from inside a Kubernetes cluster. It launches a
 // krelay-server Job in the cluster and exchanges traffic with it over a
 // tailcat (WireGuard + DERP) tunnel, bypassing the apiserver for data.
@@ -42,7 +42,8 @@ var (
 )
 
 type options struct {
-	cf *genericclioptions.ConfigFlags
+	standalone bool
+	cf         *genericclioptions.ConfigFlags
 
 	address          string
 	targetsFile      string
@@ -148,6 +149,11 @@ func (o *options) run(ctx context.Context, args []string) error {
 		}
 	}
 
+	return o.runPortForward(ctx, args, namespace)
+}
+
+func (o *options) runPortForward(ctx context.Context, args []string, namespace string) error {
+	var err error
 	var specs []targetSpec
 	if o.targetsFile != "" {
 		if len(args) != 0 {
@@ -277,15 +283,15 @@ func (o *options) run(ctx context.Context, args []string) error {
 	return nil
 }
 
-func main() {
+func newCommand(name string) *cobra.Command {
 	o := options{
-		cf: genericclioptions.NewConfigFlags(true),
+		standalone: filepath.Base(name) == "krelay",
+		cf:         genericclioptions.NewConfigFlags(true),
 	}
 	printVersion := false
-	remoteExitCode := 0
 
 	c := cobra.Command{
-		Use: fmt.Sprintf("%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT [...[LOCAL_PORT_N:]REMOTE_PORT_N]", programName()),
+		Use: fmt.Sprintf("%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT [...[LOCAL_PORT_N:]REMOTE_PORT_N]", displayName(name)),
 		Long: `Forward local TCP/UDP ports to a pod, service, workload, IP or hostname
 reachable from inside the cluster, run a local SOCKS5 proxy, or SSH into a cluster node.
 
@@ -309,7 +315,7 @@ SSH mode (ssh/NODE [-- COMMAND]):
   background mux daemon (à la ssh ControlMaster), so repeated commands
   skip pod creation and tunnel setup. The daemon exits and deletes the
   pod after --control-persist without sessions.`,
-		Example: example(),
+		Example: example(displayName(name)),
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printVersion {
@@ -324,7 +330,7 @@ SSH mode (ssh/NODE [-- COMMAND]):
 				_, err = fmt.Fprintln(cmd.OutOrStdout())
 				return err
 			}
-			if len(args) > 0 && args[0] == "socks" {
+			if len(args) > 0 && args[0] == "socks" && (!o.standalone || cmd.Name() == "socks") {
 				if cmd.Flags().Changed("namespace") {
 					return errors.New("-n/--namespace does not apply to SOCKS mode; use --server.namespace for the proxy pod namespace")
 				}
@@ -336,19 +342,22 @@ SSH mode (ssh/NODE [-- COMMAND]):
 			slog.SetLogLoggerLevel(logLevel(o.verbosity))
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
-			err := o.run(ctx, args)
-			// A remote command's exit status is not a krelay failure: exit
-			// with the same code, silently, like ssh.
-			if ec, ok := errors.AsType[exitCodeError](err); ok {
-				remoteExitCode = ec.code
-				return nil
+			if o.standalone && cmd.Name() == "port-forward" {
+				namespace, _, err := o.cf.ToRawKubeConfigLoader().Namespace()
+				if err != nil {
+					return fmt.Errorf("get namespace: %w", err)
+				}
+				return o.runPortForward(ctx, args, namespace)
 			}
-			return err
+			return o.run(ctx, args)
 		},
 		SilenceUsage: true,
 	}
 
 	flags := c.Flags()
+	if o.standalone {
+		flags = c.PersistentFlags()
+	}
 	flags.SortFlags = false
 	flags.StringVar(o.cf.KubeConfig, "kubeconfig", *o.cf.KubeConfig, "Path to the kubeconfig file to use for CLI requests.")
 	flags.StringVarP(o.cf.Namespace, "namespace", "n", *o.cf.Namespace, "If present, the namespace scope for this CLI request.")
@@ -368,24 +377,76 @@ SSH mode (ssh/NODE [-- COMMAND]):
 	_ = flags.MarkHidden("ssh-mux")
 	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")
 
-	if c.Execute() != nil {
-		os.Exit(1)
+	if o.standalone {
+		run := c.RunE
+		c.Use = "krelay COMMAND"
+		c.Long = "Forward ports, SSH into cluster nodes, or run a SOCKS5 proxy over an encrypted tunnel."
+		c.Example = `  krelay port-forward svc/nginx 8080:80
+  krelay ssh my-node-01
+  krelay ssh my-node-01 -- journalctl -u kubelet -n 50
+  krelay socks 1080`
+		c.Args = cobra.NoArgs
+		c.RunE = func(cmd *cobra.Command, args []string) error {
+			if printVersion {
+				return run(cmd, args)
+			}
+			return cmd.Help()
+		}
+		for _, mode := range []string{"port-forward", "ssh", "socks"} {
+			child := &cobra.Command{}
+			switch mode {
+			case "port-forward":
+				child.Use = "port-forward TYPE/NAME [LOCAL_PORT:]REMOTE_PORT [...]"
+				child.Short = "Forward local TCP/UDP ports into the cluster"
+			case "ssh":
+				child.Use = "ssh NODE [-- COMMAND]"
+				child.Short = "Open a node shell or execute a command"
+				child.Args = cobra.MinimumNArgs(1)
+			case "socks":
+				child.Use = "socks [PORT]"
+				child.Short = "Run a local SOCKS5 proxy"
+			}
+			child.RunE = func(cmd *cobra.Command, args []string) error {
+				switch mode {
+				case "ssh":
+					args = append([]string{"ssh/" + args[0]}, args[1:]...)
+				case "socks":
+					args = append([]string{"socks"}, args...)
+				}
+				return run(cmd, args)
+			}
+			c.AddCommand(child)
+		}
 	}
-	if remoteExitCode != 0 {
-		os.Exit(remoteExitCode)
+	return &c
+}
+
+func main() {
+	c := newCommand(os.Args[0])
+	// Remote exit statuses are returned silently, like OpenSSH.
+	c.SilenceErrors = true
+	if err := c.Execute(); err != nil {
+		if ec, ok := errors.AsType[exitCodeError](err); ok {
+			os.Exit(ec.code)
+		}
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
 	}
 }
 
 func programName() string {
-	name := filepath.Base(os.Args[0])
+	return displayName(os.Args[0])
+}
+
+func displayName(argv0 string) string {
+	name := filepath.Base(argv0)
 	if name == "kubectl-relay" {
 		return "kubectl relay"
 	}
 	return name
 }
 
-func example() string {
-	name := programName()
+func example(name string) string {
 	return fmt.Sprintf(`  # Forward local port 8080 to port 80 of service "nginx"
   %[1]s svc/nginx 8080:80
 

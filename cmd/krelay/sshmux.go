@@ -84,8 +84,11 @@ func muxID(parts ...string) string {
 // because the daemon is the same binary with the same defaults. All current
 // flags are single-valued (Value.String() would collapse a repeatable flag
 // to its last value).
-func muxDaemonArgs(nodeName string, flags *pflag.FlagSet) []string {
+func muxDaemonArgs(nodeName string, flags *pflag.FlagSet, standalone bool) []string {
 	args := []string{"--ssh-mux", "ssh/" + nodeName}
+	if standalone {
+		args = []string{"ssh", nodeName, "--ssh-mux"}
+	}
 	flags.Visit(func(f *pflag.Flag) {
 		if f.Name == "ssh-mux" {
 			return
@@ -213,7 +216,7 @@ func (o *options) spawnMuxDaemon(ctx context.Context, nodeName string, paths mux
 	}
 	defer logFile.Close()
 
-	args := muxDaemonArgs(nodeName, o.flags)
+	args := muxDaemonArgs(nodeName, o.flags, o.standalone)
 
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -221,6 +224,8 @@ func (o *options) spawnMuxDaemon(ctx context.Context, nodeName string, paths mux
 	}
 	defer r.Close()
 	cmd := exec.Command(exe, args...)
+	// Preserve the CLI dialect even when os.Executable resolves a plugin symlink.
+	cmd.Args[0] = os.Args[0]
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.ExtraFiles = []*os.File{w} // fd 3: the startup status pipe
