@@ -17,7 +17,9 @@ subcommands: `port-forward TYPE/NAME PORT...`, `ssh NODE [-- COMMAND]`,
 `socks [PORT]`, and `cp [-r] SOURCE DESTINATION`. Shared flags are inherited by
 standalone subcommands. `--file` is local to `port-forward`;
 `--control-persist` and `--derp-map-url` are shared by `ssh` and `cp` only.
-`cp` streams tar over SSH exec and uses `os.Root` to confine local extraction;
+`cp` uses SFTP and `os.Root` to confine local directory writes. The server
+re-execs itself as a dedicated SFTP worker, then chroots to `/proc/1/root`;
+never chroot the main relay process or require host executables for copying.
 its `--recursive` flag must not be forwarded to the SSH mux daemon. Preserve
 the invocation name when re-executing the SSH mux daemon, including symlinks.
 

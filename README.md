@@ -67,11 +67,19 @@ basename is appended; otherwise the destination names the copied file or
 directory. The destination's parent must exist. Use `./` to disambiguate a
 local filename containing a colon, and quote paths containing spaces.
 
-Copies stream tar archives through SSH without local staging files and require
-`tar` on the node. Regular files, directories, and symbolic links are supported;
-symbolic links are copied as links. Ownership is not preserved, and interrupted
-copies may leave partial results. Existing files are overwritten. No server
-image update is needed.
+Copies stream files over the server's built-in SFTP subsystem; neither tar nor
+a shell is needed on the node. The server runs a dedicated worker rooted in
+the host filesystem, so absolute paths and absolute symlinks resolve on the
+host. Relative remote paths start at `/`. Regular files, directories, and
+symbolic links are supported; symbolic links are copied as links. Ownership
+is not preserved, and interrupted copies may leave partial results. Existing
+files are replaced without following destination links.
+
+This requires a server image with SFTP support. When upgrading a cached `v2`
+image, use `--server.pull-policy=Always` for the new server Job. Existing mux
+sessions keep their running server until its idle timeout; an older server
+reports a clear SFTP error. `--control-persist=0` starts a fresh temporary
+server when immediate use of the new image is needed.
 
 ### kubectl plugin
 
