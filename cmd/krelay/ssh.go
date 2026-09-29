@@ -47,32 +47,37 @@ func (e exitCodeError) Error() string {
 // with --control-persist=0 or --server-token this process establishes its own
 // tunnel and tears it down on exit.
 func (o *options) runSSH(ctx context.Context, nodeName, command string) error {
-	var conn net.Conn
+	return o.withSSHConn(ctx, nodeName, func(conn net.Conn) error {
+		if command != "" {
+			return runSSHExec(ctx, conn, command, os.Stdin, os.Stdout, os.Stderr)
+		}
+		return runSSHShell(ctx, conn)
+	})
+}
+
+// withSSHConn shares tunnel ownership and cleanup between SSH and file copies.
+func (o *options) withSSHConn(ctx context.Context, nodeName string, run func(net.Conn) error) error {
 	if o.controlPersist > 0 && o.serverToken == "" {
-		var err error
-		conn, err = o.muxDial(ctx, nodeName)
+		conn, err := o.muxDial(ctx, nodeName)
 		if err != nil {
 			return err
 		}
-	} else {
-		tn, err := o.dialSSHTunnel(ctx, nodeName, true)
-		if err != nil {
-			return err
-		}
-		defer tn.Close()
-
-		dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		conn, err = tn.tc.DialTCPPort(dialCtx, serverSSHPort)
-		cancel()
-		if err != nil {
-			return fmt.Errorf("dial SSH port on krelay-server: %w", err)
-		}
+		defer conn.Close()
+		return run(conn)
 	}
-
-	if command != "" {
-		return runSSHExec(ctx, conn, command, os.Stdin, os.Stdout, os.Stderr)
+	tn, err := o.dialSSHTunnel(ctx, nodeName, true)
+	if err != nil {
+		return err
 	}
-	return runSSHShell(ctx, conn)
+	defer tn.Close()
+	dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	conn, err := tn.tc.DialTCPPort(dialCtx, serverSSHPort)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("dial SSH port on krelay-server: %w", err)
+	}
+	defer conn.Close()
+	return run(conn)
 }
 
 // sshTunnel is an established tunnel to a krelay-server running on a node.

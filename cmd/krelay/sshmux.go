@@ -79,18 +79,28 @@ func muxID(parts ...string) string {
 }
 
 // muxDaemonArgs reconstructs the daemon's command line by forwarding every
-// flag the user explicitly set, so newly introduced flags reach the daemon
-// without anyone remembering to forward them; unset flags need no forwarding
+// flag accepted by the SSH command that the user explicitly set. Deriving the
+// allowed flags from the command keeps copy-only flags out of daemon startup;
+// newly introduced SSH flags need no manual forwarding. Unset flags need no forwarding
 // because the daemon is the same binary with the same defaults. All current
 // flags are single-valued (Value.String() would collapse a repeatable flag
 // to its last value).
 func muxDaemonArgs(nodeName string, flags *pflag.FlagSet, standalone bool) []string {
 	args := []string{"--ssh-mux", "ssh/" + nodeName}
+	allowed := flags
 	if standalone {
 		args = []string{"ssh", nodeName, "--ssh-mux"}
+		root := newCommand("krelay")
+		allowed = root.PersistentFlags()
+		for _, cmd := range root.Commands() {
+			if cmd.Name() == "ssh" {
+				allowed.AddFlagSet(cmd.Flags())
+				break
+			}
+		}
 	}
 	flags.Visit(func(f *pflag.Flag) {
-		if f.Name == "ssh-mux" {
+		if f.Name == "ssh-mux" || allowed.Lookup(f.Name) == nil {
 			return
 		}
 		args = append(args, "--"+f.Name+"="+f.Value.String())

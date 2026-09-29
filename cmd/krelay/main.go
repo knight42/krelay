@@ -289,6 +289,7 @@ func newCommand(name string) *cobra.Command {
 		cf:         genericclioptions.NewConfigFlags(true),
 	}
 	printVersion := false
+	recursive := false
 
 	c := cobra.Command{
 		Use: fmt.Sprintf("%s TYPE/NAME [options] [LOCAL_PORT:]REMOTE_PORT [...[LOCAL_PORT_N:]REMOTE_PORT_N]", displayName(name)),
@@ -342,6 +343,9 @@ SSH mode (ssh/NODE [-- COMMAND]):
 			slog.SetLogLoggerLevel(logLevel(o.verbosity))
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
+			if o.standalone && cmd.Name() == "cp" {
+				return o.runCopy(ctx, args[0], args[1], recursive)
+			}
 			if o.standalone && cmd.Name() == "port-forward" {
 				namespace, _, err := o.cf.ToRawKubeConfigLoader().Namespace()
 				if err != nil {
@@ -365,14 +369,20 @@ SSH mode (ssh/NODE [-- COMMAND]):
 	flags.StringVar(o.cf.ClusterName, "cluster", *o.cf.ClusterName, "The name of the kubeconfig cluster to use.")
 	flags.BoolVarP(&printVersion, "version", "V", false, "Print version info and exit.")
 	flags.StringVarP(&o.address, "address", "l", "127.0.0.1", "Address to listen on. Only accepts IP addresses as a value.")
-	flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line. \"-\" reads from stdin.")
+	if !o.standalone {
+		flags.StringVarP(&o.targetsFile, "file", "f", "", "Forward to the targets specified in the given file, with one target per line. \"-\" reads from stdin.")
+	}
 	flags.StringVar(&o.serverImage, "server.image", "ghcr.io/knight42/krelay-server:v2", "The krelay-server image to use.")
 	flags.StringVar(&o.serverPullPolicy, "server.pull-policy", "IfNotPresent", "Image pull policy of the krelay-server pod.")
 	flags.StringVar(&o.serverNamespace, "server.namespace", "default", "Namespace to create the krelay-server Job in.")
-	flags.StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to bootstrap the tunnel. Point this at your own DERP deployment to avoid third-party relays. A file:// URL is read locally and its contents are sent to the server pod.")
+	if !o.standalone {
+		flags.StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "URL of the DERP map used to bootstrap the tunnel. Point this at your own DERP deployment to avoid third-party relays. A file:// URL is read locally and its contents are sent to the server pod.")
+	}
 	flags.StringVar(&o.serverToken, "server-token", "", "Connect to an existing krelay-server using this token instead of creating one.")
 	_ = flags.MarkHidden("server-token")
-	flags.DurationVar(&o.controlPersist, "control-persist", 10*time.Minute, "In SSH mode, how long the background mux daemon keeps the server pod and tunnel alive after the last session. 0 gives each invocation its own short-lived server instead.")
+	if !o.standalone {
+		flags.DurationVar(&o.controlPersist, "control-persist", 10*time.Minute, "In SSH mode, how long the background mux daemon keeps the server pod and tunnel alive after the last session. 0 gives each invocation its own short-lived server instead.")
+	}
 	flags.BoolVar(&o.sshMux, "ssh-mux", false, "Run as the SSH mux daemon (internal).")
 	_ = flags.MarkHidden("ssh-mux")
 	flags.IntVarP(&o.verbosity, "v", "v", 3, "Number for the log level verbosity. The bigger the more verbose.")
@@ -380,7 +390,7 @@ SSH mode (ssh/NODE [-- COMMAND]):
 	if o.standalone {
 		run := c.RunE
 		c.Use = "krelay COMMAND"
-		c.Long = "Forward ports, SSH into cluster nodes, or run a SOCKS5 proxy over an encrypted tunnel."
+		c.Long = "Forward ports, SSH into cluster nodes, copy files, or run a SOCKS5 proxy over an encrypted tunnel."
 		c.Example = `  krelay port-forward svc/nginx 8080:80
   krelay ssh my-node-01
   krelay ssh my-node-01 -- journalctl -u kubelet -n 50
@@ -392,19 +402,31 @@ SSH mode (ssh/NODE [-- COMMAND]):
 			}
 			return cmd.Help()
 		}
-		for _, mode := range []string{"port-forward", "ssh", "socks"} {
+		for _, mode := range []string{"port-forward", "ssh", "socks", "cp"} {
 			child := &cobra.Command{}
 			switch mode {
 			case "port-forward":
 				child.Use = "port-forward TYPE/NAME [LOCAL_PORT:]REMOTE_PORT [...]"
 				child.Short = "Forward local TCP/UDP ports into the cluster"
+				child.Flags().StringVarP(&o.targetsFile, "file", "f", "", "Forward to targets in a file; '-' reads stdin.")
 			case "ssh":
 				child.Use = "ssh NODE [-- COMMAND]"
 				child.Short = "Open a node shell or execute a command"
 				child.Args = cobra.MinimumNArgs(1)
+			case "cp":
+				child.Use = "cp [-r] SOURCE DESTINATION"
+				child.Short = "Copy files between this machine and a cluster node"
+				child.Long = "Copy files or directories over SSH. Exactly one path must use NODE:PATH.\nAn existing destination directory receives the source basename. Requires tar on the node."
+				child.Example = "  krelay cp ./file node:/tmp/file\n  krelay cp node:/tmp/file ./file\n  krelay cp -r ./dir node:/tmp/"
+				child.Args = cobra.ExactArgs(2)
+				child.Flags().BoolVarP(&recursive, "recursive", "r", false, "Copy directories recursively.")
 			case "socks":
 				child.Use = "socks [PORT]"
 				child.Short = "Run a local SOCKS5 proxy"
+			}
+			if mode == "ssh" || mode == "cp" {
+				child.Flags().DurationVar(&o.controlPersist, "control-persist", 10*time.Minute, "How long the SSH mux daemon keeps the server pod and tunnel alive after the last session. 0 disables sharing.")
+				child.Flags().StringVar(&o.derpMapURL, "derp-map-url", tailcat.DefaultDERPMapURL, "DERP map URL for the SSH tunnel; also accepts file:// URLs.")
 			}
 			child.RunE = func(cmd *cobra.Command, args []string) error {
 				switch mode {
