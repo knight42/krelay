@@ -26,8 +26,8 @@ import (
 const sshPort = 22
 
 // newSSHHandler returns a function that serves incoming tailcat TCP connections
-// on port 22 as SSH sessions. Each session runs nsenter to enter the host
-// namespaces (PID 1), giving the SSH client a shell on the node.
+// on port 22 as SSH sessions. Shell sessions enter the host namespaces via
+// nsenter; SFTP sessions run a dedicated worker rooted in the host filesystem.
 func newSSHHandler() func(net.Conn) {
 	hostKey, err := generateHostKey()
 	if err != nil {
@@ -36,6 +36,7 @@ func newSSHHandler() func(net.Conn) {
 
 	srv := &ssh.Server{
 		Handler:             sessionHandler,
+		SubsystemHandlers:   map[string]ssh.SubsystemHandler{"sftp": sftpSessionHandler},
 		NoClientAuthHandler: func(ssh.Context) error { return nil },
 		ChannelHandlers:     map[string]ssh.ChannelHandler{"session": ssh.DefaultSessionHandler},
 		RequestHandlers:     map[string]ssh.RequestHandler{},

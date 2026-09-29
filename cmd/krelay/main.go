@@ -416,7 +416,7 @@ SSH mode (ssh/NODE [-- COMMAND]):
 			case "cp":
 				child.Use = "cp [-r] SOURCE DESTINATION"
 				child.Short = "Copy files between this machine and a cluster node"
-				child.Long = "Copy files or directories over SSH. Exactly one path must use NODE:PATH.\nAn existing destination directory receives the source basename. Requires tar on the node."
+				child.Long = "Copy files or directories over SSH. Exactly one path must use NODE:PATH.\nAn existing destination directory receives the source basename. Requires an SFTP-capable krelay-server image."
 				child.Example = "  krelay cp ./file node:/tmp/file\n  krelay cp node:/tmp/file ./file\n  krelay cp -r ./dir node:/tmp/"
 				child.Args = cobra.ExactArgs(2)
 				child.Flags().BoolVarP(&recursive, "recursive", "r", false, "Copy directories recursively.")

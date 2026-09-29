@@ -1,8 +1,6 @@
 package main
 
 import (
-	"archive/tar"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,8 +10,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"strings"
+
+	"github.com/pkg/sftp"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 type copyPath struct{ node, name string }
@@ -34,10 +34,6 @@ func parseCopyPath(s string) (copyPath, error) {
 	return copyPath{node: s[:colon], name: s[colon+1:]}, nil
 }
 
-func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-
-type copyExec func(context.Context, string, io.Reader, io.Writer) error
-
 func (o *options) runCopy(ctx context.Context, source, destination string, recursive bool) error {
 	src, err := parseCopyPath(source)
 	if err != nil {
@@ -57,295 +53,215 @@ func (o *options) runCopy(ctx context.Context, source, destination string, recur
 	if node == "" {
 		node = dst.node
 	}
-	run := func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer) error {
-		return o.withSSHConn(ctx, node, func(conn net.Conn) error {
-			return runSSHExec(ctx, conn, command, stdin, stdout, os.Stderr)
+	return o.withSSHConn(ctx, node, func(conn net.Conn) error {
+		return withSFTP(ctx, conn, func(client *sftp.Client) error {
+			if src.node == "" {
+				return transferCopy(ctx, src.name, dst.name, recursive, true, client)
+			}
+			return transferCopy(ctx, dst.name, src.name, recursive, false, client)
 		})
-	}
-	if src.node == "" {
-		return uploadCopy(ctx, src.name, dst.name, recursive, run)
-	}
-	return downloadCopy(ctx, src.name, dst.name, recursive, run)
+	})
 }
 
-func uploadCopy(ctx context.Context, src, dst string, recursive bool, run copyExec) error {
-	src = filepath.Clean(src)
-	info, err := os.Lstat(src)
+// withSFTP uses the existing authenticated tunnel and closes it on cancellation,
+// including while the SSH handshake or SFTP request is blocked.
+func withSFTP(ctx context.Context, conn net.Conn, run func(*sftp.Client) error) error {
+	defer conn.Close()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	cc, channels, requests, err := gossh.NewClientConn(conn, "krelay-server", sshClientConfig())
+	if err != nil {
+		return fmt.Errorf("SSH handshake: %w", err)
+	}
+	sshClient := gossh.NewClient(cc, channels, requests)
+	defer sshClient.Close()
+	client, err := sftp.NewClient(sshClient)
+	if err != nil {
+		return fmt.Errorf("open SFTP subsystem (requires an SFTP-capable krelay-server image; restart an existing SSH mux to use it): %w", err)
+	}
+	defer func() { _ = client.Close() }()
+	if err := run(client); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	return nil
+}
+
+// copyFS exposes only the operations cp needs. Local operations use os.Root;
+// remote operations use SFTP, never shell commands or archive extraction.
+type copyFS struct {
+	lstat    func(string) (os.FileInfo, error)
+	readDir  func(string) ([]os.FileInfo, error)
+	open     func(string) (io.ReadCloser, error)
+	create   func(string) (io.WriteCloser, error)
+	mkdir    func(string) error
+	chmod    func(string, fs.FileMode) error
+	readlink func(string) (string, error)
+	symlink  func(string, string) error
+	remove   func(string) error
+}
+
+func localCopyFS(root *os.Root) copyFS {
+	return copyFS{
+		lstat: root.Lstat,
+		readDir: func(name string) ([]os.FileInfo, error) {
+			f, err := root.Open(name)
+			if err != nil {
+				return nil, err
+			}
+			defer f.Close()
+			return f.Readdir(-1)
+		},
+		open: func(name string) (io.ReadCloser, error) { return root.Open(name) },
+		create: func(name string) (io.WriteCloser, error) {
+			return root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		},
+		mkdir: func(name string) error { return root.Mkdir(name, 0700) },
+		chmod: root.Chmod, readlink: root.Readlink, symlink: root.Symlink, remove: root.Remove,
+	}
+}
+
+func remoteCopyFS(client *sftp.Client) copyFS {
+	return copyFS{
+		lstat: client.Lstat, readDir: client.ReadDir,
+		open: func(name string) (io.ReadCloser, error) { return client.Open(name) },
+		create: func(name string) (io.WriteCloser, error) {
+			return client.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+		},
+		mkdir: client.Mkdir, chmod: client.Chmod, readlink: client.ReadLink, symlink: client.Symlink, remove: client.Remove,
+	}
+}
+
+func transferCopy(ctx context.Context, local, remote string, recursive, upload bool, client *sftp.Client) error {
+	var info os.FileInfo
+	var err error
+	if upload {
+		info, err = os.Lstat(local)
+	} else {
+		info, err = client.Lstat(remote)
+	}
 	if err != nil {
 		return err
 	}
 	if info.IsDir() && !recursive {
 		return errors.New("source is a directory; use -r")
 	}
-	if !info.IsDir() && !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("unsupported source type: %s", src)
-	}
-	var kind bytes.Buffer
-	if err := run(ctx, "if [ -d "+shellQuote(dst)+" ]; then printf d; else printf f; fi", strings.NewReader(""), &kind); err != nil {
-		return err
-	}
-	if kind.String() != "d" && kind.String() != "f" {
-		return errors.New("unexpected destination probe response")
-	}
-	if kind.String() == "f" && strings.HasSuffix(dst, "/") {
-		return fmt.Errorf("destination directory does not exist: %s", dst)
-	}
-	if kind.String() == "d" {
-		dst = path.Join(dst, filepath.Base(src))
-	}
-	dst = path.Clean(dst)
-	// Prefix the archive member with './' so even a leading '-' is a file name.
-	command := "tar -C " + shellQuote(path.Dir(dst)) + " -xf -"
-	reader, writer := io.Pipe()
-	produced := make(chan error, 1)
-	go func() {
-		err := writeCopyArchive(writer, src, path.Base(dst))
-		_ = writer.CloseWithError(err)
-		produced <- err
-	}()
-	remoteErr := run(ctx, command, reader, io.Discard)
-	_ = reader.CloseWithError(remoteErr)
-	localErr := <-produced
-	if localErr != nil && !errors.Is(localErr, io.ErrClosedPipe) {
-		return fmt.Errorf("read source: %w", localErr)
-	}
-	if remoteErr != nil {
-		return remoteErr
-	}
-	return localErr
-}
-
-func downloadCopy(ctx context.Context, src, dst string, recursive bool, run copyExec) error {
-	src = path.Clean(src)
-	base := path.Base(src)
-	dir := path.Dir(src)
-	if src == "/" {
-		base, dir = ".", "/"
-	}
-	command := "tar -C " + shellQuote(dir) + " -cf - " + shellQuote("./"+base)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	reader, writer := io.Pipe()
-	finished := make(chan error, 1)
-	go func() {
-		err := run(ctx, command, strings.NewReader(""), writer)
-		_ = writer.CloseWithError(err)
-		finished <- err
-	}()
-	localErr := readCopyArchive(reader, dst, base, recursive)
-	if localErr == nil {
-		// tar ends before SSH EOF. Drain padding so the SSH stdout copier can finish.
-		_, localErr = io.Copy(io.Discard, reader)
-	}
-	_ = reader.Close()
-	if localErr != nil {
-		cancel()
-	}
-	remoteErr := <-finished
-	if localErr != nil {
-		return fmt.Errorf("extract copy: %w", localErr)
-	}
-	return remoteErr
-}
-
-// writeCopyArchive does not follow symlinks while walking directories. Ownership
-// is deliberately omitted: uploaded files belong to the remote SSH user (root).
-func writeCopyArchive(w io.Writer, src, name string) error {
-	tw := tar.NewWriter(w)
-	err := filepath.WalkDir(src, func(file string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		info, err := entry.Info()
-		if err != nil {
+	if upload {
+		dest, err := client.Stat(remote)
+		if err == nil && dest.IsDir() {
+			remote = path.Join(remote, filepath.Base(filepath.Clean(local)))
+		} else if err != nil && (!os.IsNotExist(err) || strings.HasSuffix(remote, "/")) {
 			return err
 		}
-		link := ""
-		if info.Mode()&os.ModeSymlink != 0 {
-			link, err = os.Readlink(file)
-			if err != nil {
-				return err
-			}
-		} else if !info.IsDir() && !info.Mode().IsRegular() {
-			return fmt.Errorf("unsupported file type: %s", file)
-		}
-		header, err := tar.FileInfoHeader(info, link)
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, file)
-		if err != nil {
-			return err
-		}
-		header.Name = "./" + path.Join(name, filepath.ToSlash(rel))
-		header.Uid, header.Gid, header.Uname, header.Gname = 0, 0, "", ""
-		header.Mode &= 0777
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		f, err := os.Open(file)
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(tw, f)
-		closeErr := f.Close()
-		return errors.Join(err, closeErr)
-	})
-	return errors.Join(err, tw.Close())
-}
-
-// archiveCopyName confines every member (including hardlink targets) to the
-// requested source, then maps that source to the user's destination basename.
-func archiveCopyName(name, source, destination string) (string, error) {
-	if slices.Contains(strings.Split(name, "/"), "..") {
-		return "", fmt.Errorf("unsafe archive path %q", name)
-	}
-	if path.IsAbs(name) {
-		return "", fmt.Errorf("absolute archive path %q", name)
-	}
-	name = path.Clean(name)
-	source = path.Clean(source)
-	var rel string
-	if source == "." {
-		rel = name
-	} else if name == source {
-		rel = "."
 	} else {
-		var ok bool
-		rel, ok = strings.CutPrefix(name, source+"/")
-		if !ok {
-			return "", fmt.Errorf("unexpected archive member %q", name)
+		dest, err := os.Stat(local)
+		if err == nil && dest.IsDir() {
+			local = filepath.Join(local, path.Base(path.Clean(remote)))
+		} else if err != nil && (!os.IsNotExist(err) || strings.HasSuffix(local, string(os.PathSeparator))) {
+			return err
 		}
 	}
-	return filepath.Join(destination, filepath.FromSlash(rel)), nil
-}
-
-func readCopyArchive(r io.Reader, dst, source string, recursive bool) error {
-	tr := tar.NewReader(r)
-	first, err := tr.Next()
-	if err != nil {
-		return fmt.Errorf("read archive header: %w", err)
-	}
-	if path.Clean(first.Name) != path.Clean(source) {
-		return fmt.Errorf("unexpected archive root %q", first.Name)
-	}
-	if first.Typeflag == tar.TypeDir && !recursive {
-		return errors.New("source is a directory; use -r")
-	}
-	if info, err := os.Stat(dst); err == nil && info.IsDir() {
-		dst = filepath.Join(dst, source)
-	} else if err != nil && (!errors.Is(err, os.ErrNotExist) || strings.HasSuffix(dst, string(os.PathSeparator))) {
-		return err
-	}
-	dst = filepath.Clean(dst)
-	root, err := os.OpenRoot(filepath.Dir(dst))
+	local = filepath.Clean(local)
+	root, err := os.OpenRoot(filepath.Dir(local))
 	if err != nil {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	// os.Root enforces confinement even through pre-existing or archived symlinks.
-	// Use a separate root for directories so links cannot reach destination siblings.
-	if first.Typeflag == tar.TypeDir {
-		if err := root.MkdirAll(filepath.Base(dst), 0755); err != nil {
+	localName := filepath.Base(local)
+	// For recursive downloads, confine all writes to the selected directory,
+	// including when the destination already contains symlinks.
+	if !upload && info.IsDir() {
+		if err := root.Mkdir(localName, 0700); err != nil && !os.IsExist(err) {
 			return err
 		}
-		dirRoot, err := root.OpenRoot(filepath.Base(dst))
+		dir, err := root.OpenRoot(localName)
 		if err != nil {
 			return err
 		}
-		defer func() { _ = dirRoot.Close() }()
-		return extractCopyArchive(tr, first, dirRoot, source, ".")
+		defer func() { _ = dir.Close() }()
+		return copyEntry(ctx, remoteCopyFS(client), localCopyFS(dir), remote, ".")
 	}
-	return extractCopyArchive(tr, first, root, source, filepath.Base(dst))
+	if upload {
+		return copyEntry(ctx, localCopyFS(root), remoteCopyFS(client), localName, remote)
+	}
+	return copyEntry(ctx, remoteCopyFS(client), localCopyFS(root), remote, localName)
 }
 
-func extractCopyArchive(tr *tar.Reader, header *tar.Header, root *os.Root, source, destination string) error {
-	directory := header.Typeflag == tar.TypeDir
-	// Keep directories writable until their children have been extracted.
-	type directoryMode struct {
-		name string
-		mode fs.FileMode
+func copyEntry(ctx context.Context, srcFS, dstFS copyFS, src, dst string) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	var directories []directoryMode
-	for {
-		name, err := archiveCopyName(header.Name, source, destination)
-		if err != nil {
-			return err
-		}
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := root.MkdirAll(name, 0755); err != nil {
-				return err
-			}
-			directories = append(directories, directoryMode{name, fs.FileMode(header.Mode) & 0777})
-		case tar.TypeReg:
-			f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fs.FileMode(header.Mode)&0777)
-			if err != nil {
-				return err
-			}
-			_, copyErr := io.Copy(f, tr)
-			closeErr := f.Close()
-			if err := errors.Join(copyErr, closeErr); err != nil {
-				return err
-			}
-		case tar.TypeSymlink:
-			if err := removeCopyLink(root, name); err != nil {
-				return err
-			}
-			if err := root.Symlink(header.Linkname, name); err != nil {
-				return err
-			}
-		case tar.TypeLink:
-			target, err := archiveCopyName(header.Linkname, source, destination)
-			if err != nil {
-				return err
-			}
-			if err := removeCopyLink(root, name); err != nil {
-				return err
-			}
-			if err := root.Link(target, name); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unsupported archive entry type %d: %s", header.Typeflag, header.Name)
-		}
-		header, err = tr.Next()
-		if errors.Is(err, io.EOF) {
-			for _, dir := range slices.Backward(directories) {
-				f, err := root.Open(dir.name)
-				if err != nil {
-					return err
-				}
-				chmodErr := f.Chmod(dir.mode)
-				if err := errors.Join(chmodErr, f.Close()); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if !directory {
-			return errors.New("unexpected extra entry for a single-file copy")
-		}
-	}
-}
-
-// Replace existing files and links without removing destination directories.
-func removeCopyLink(root *os.Root, name string) error {
-	info, err := root.Lstat(name)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
+	info, err := srcFS.lstat(src)
 	if err != nil {
 		return err
 	}
 	if info.IsDir() {
-		return fmt.Errorf("cannot replace directory %s with a link", name)
+		existing, err := dstFS.lstat(dst)
+		if os.IsNotExist(err) {
+			err = dstFS.mkdir(dst)
+		} else if err == nil && !existing.IsDir() {
+			return fmt.Errorf("destination is not a directory: %s", dst)
+		}
+		if err != nil {
+			return err
+		}
+		entries, err := srcFS.readDir(src)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			// The peer controls directory listings; accept only single path components.
+			if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+				return fmt.Errorf("invalid directory entry %q", name)
+			}
+			if err := copyEntry(ctx, srcFS, dstFS, path.Join(src, name), path.Join(dst, name)); err != nil {
+				return err
+			}
+		}
+		return dstFS.chmod(dst, info.Mode().Perm())
 	}
-	return root.Remove(name)
+	if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("unsupported source type: %s", src)
+	}
+	// Open/read the source before replacing an existing destination.
+	var input io.ReadCloser
+	var target string
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err = srcFS.readlink(src)
+	} else {
+		input, err = srcFS.open(src)
+	}
+	if err != nil {
+		return err
+	}
+	if input != nil {
+		defer input.Close()
+	}
+	// Unlink instead of following destination symlinks or truncating hardlinks.
+	// Exclusive creation also prevents a concurrent symlink replacement.
+	if existing, err := dstFS.lstat(dst); err == nil {
+		if existing.IsDir() {
+			return fmt.Errorf("cannot replace directory: %s", dst)
+		}
+		if err := dstFS.remove(dst); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return dstFS.symlink(target, dst)
+	}
+	output, err := dstFS.create(dst)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(output, input)
+	if err := errors.Join(copyErr, output.Close()); err != nil {
+		return err
+	}
+	return dstFS.chmod(dst, info.Mode().Perm())
 }

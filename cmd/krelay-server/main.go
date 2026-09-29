@@ -29,6 +29,14 @@ import (
 )
 
 func main() {
+	// Re-exec before starting any tunnel goroutines: changing the filesystem
+	// root must affect only this dedicated SFTP worker, never the relay server.
+	if len(os.Args) == 2 && os.Args[1] == "--sftp-server" {
+		if err := serveHostSFTP(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	var (
 		allowedClient string
 		derpMapURL    string
