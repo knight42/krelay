@@ -26,6 +26,25 @@ instead of being funneled through the Kubernetes apiserver.
 
 ## Usage
 
+The executable name selects the CLI. `kubectl-relay` (invoked as
+`kubectl relay`) keeps the plugin syntax shown below. `krelay` uses explicit
+subcommands:
+
+```bash
+krelay port-forward svc/nginx 8080:80
+krelay port-forward -f targets.txt
+krelay ssh my-node-01
+krelay ssh my-node-01 -- journalctl -u kubelet -n 50
+krelay socks 1080
+```
+
+Shared flags such as `--context` and `--server.namespace` can appear before
+or after the subcommand. Run `krelay COMMAND --help` for command help.
+`port-forward` retains the plugin's target types, TCP/UDP port syntax, and
+multiple-target file support. Both SSH entry points share the same mux daemon.
+
+### kubectl plugin
+
 ```bash
 # Forward local port 8080 to port 80 of service "nginx"
 kubectl relay svc/nginx 8080:80

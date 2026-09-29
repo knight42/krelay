@@ -1,6 +1,6 @@
 # krelay
 
-kubectl plugin (`kubectl-relay`) that forwards local TCP/UDP ports into a
+Standalone CLI (`krelay`) and kubectl plugin (`kubectl-relay`) that forward local TCP/UDP ports into a
 Kubernetes cluster over a tailcat (WireGuard + DERP) tunnel, bypassing the
 apiserver for data. Client: `cmd/krelay`. Short-lived in-cluster server pod:
 `cmd/krelay-server`. Shared code: `pkg/`.
@@ -9,6 +9,13 @@ apiserver for data. Client: `cmd/krelay`. Short-lived in-cluster server pod:
 
 All work happens on the `v2` branch (an orphan rewrite). Never commit to or
 modify `main`.
+
+## CLI entry points
+
+`kubectl-relay` retains the flat plugin syntax. `krelay` uses Cobra
+subcommands: `port-forward TYPE/NAME PORT...`, `ssh NODE [-- COMMAND]`, and
+`socks [PORT]`. Shared flags are inherited by standalone subcommands. Preserve
+the invocation name when re-executing the SSH mux daemon, including symlinks.
 
 ## Commands
 
@@ -67,7 +74,7 @@ Job and tunnel, à la OpenSSH ControlMaster/ControlPersist:
 ## Verification
 
 End-to-end runs use the local OrbStack cluster (`kubectl` context
-`orbstack`), e.g. `./krelay svc/kubernetes 8443:443`. Client-only changes
+`orbstack`), e.g. `./krelay port-forward svc/kubernetes 8443:443`. Client-only changes
 work against the already-published server image. Note the shell may export
 `KUBECONFIG` pointing at a work cluster; the `orbstack` context lives in
 `~/.kube/config`, so unset it (or set `KUBECONFIG=~/.kube/config`) first.
