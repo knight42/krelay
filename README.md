@@ -36,12 +36,42 @@ krelay port-forward -f targets.txt
 krelay ssh my-node-01
 krelay ssh my-node-01 -- journalctl -u kubelet -n 50
 krelay socks 1080
+krelay cp ./file my-node-01:/tmp/file
 ```
 
 Shared flags such as `--context` and `--server.namespace` can appear before
 or after the subcommand. Run `krelay COMMAND --help` for command help.
 `port-forward` retains the plugin's target types, TCP/UDP port syntax, and
-multiple-target file support. Both SSH entry points share the same mux daemon.
+multiple-target file support. Both SSH entry points and `cp` share the same mux daemon.
+
+Command-specific flags follow their subcommand: `--file/-f` belongs to
+`port-forward`; `--control-persist` and `--derp-map-url` belong to `ssh` and
+`cp`; `--recursive/-r` belongs to `cp`. The kubectl plugin keeps its existing
+flat flag interface.
+
+### Copy files
+
+```bash
+# Upload a file, or download it under a new name
+krelay cp ./file.bin my-node-01:/tmp/file.bin
+krelay cp my-node-01:/tmp/file.bin ./download.bin
+
+# Copy a directory recursively
+krelay cp -r ./data my-node-01:/tmp/
+krelay cp -r my-node-01:/tmp/data ./backup
+```
+
+Exactly one operand must be `NODE:PATH`; remote paths refer to the node's
+host filesystem. If the destination is an existing directory, the source
+basename is appended; otherwise the destination names the copied file or
+directory. The destination's parent must exist. Use `./` to disambiguate a
+local filename containing a colon, and quote paths containing spaces.
+
+Copies stream tar archives through SSH without local staging files and require
+`tar` on the node. Regular files, directories, and symbolic links are supported;
+symbolic links are copied as links. Ownership is not preserved, and interrupted
+copies may leave partial results. Existing files are overwritten. No server
+image update is needed.
 
 ### kubectl plugin
 
