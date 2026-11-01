@@ -44,7 +44,11 @@ func sendHeartbeats(c httpstream.Connection, interval time.Duration) {
 				slog.Error("Fail to create heartbeat stream", slogutil.Error(err))
 				return
 			}
-			go func() { <-errCh }()
+			go func() {
+				if err := <-errCh; err != nil {
+					slog.Warn("Heartbeat stream error", slogutil.Error(err))
+				}
+			}()
 			hdr := xnet.Header{
 				RequestID: reqID,
 				Protocol:  xnet.ProtocolKeepalive,
